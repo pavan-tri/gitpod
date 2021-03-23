@@ -4,10 +4,14 @@
  * See License-AGPL.txt in the project root for license information.
  */
 
-import React from "react";
-import { DisposableCollection, WorkspaceInstance } from "@gitpod/gitpod-protocol";
+import EventEmitter from "events";
+import React, { useEffect, Suspense } from "react";
+import { DisposableCollection, WorkspaceInstance, WorkspaceImageBuild } from "@gitpod/gitpod-protocol";
+import { HeadlessLogEvent } from "@gitpod/gitpod-protocol/lib/headless-workspace-log";
 import { getGitpodService, gitpodHostUrl } from "../service/service";
 import { StartPage, StartPhase } from "./StartPage";
+
+const WorkspaceLogs = React.lazy(() => import('./WorkspaceLogs'));
 
 export interface StartWorkspaceProps {
   workspaceId: string;
@@ -31,6 +35,7 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
 
   constructor(props: StartWorkspaceProps) {
     super(props);
+    this.state = {};
   }
 
   private readonly toDispose = new DisposableCollection();
@@ -51,6 +56,7 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
     try {
       this.toDispose.push(getGitpodService().registerClient(this));
     } catch (error) {
+      console.error(error);
       this.setState({ error });
     }
 
@@ -94,6 +100,10 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
         }
       });
     } catch (error) {
+      console.error(error);
+      if (typeof error === 'string') {
+        error = { message: error };
+      }
       this.setState({ error });
     }
   }
@@ -113,11 +123,12 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
       return;
     }
 
-    if (workspaceInstance.status.phase === 'preparing') {
-      getGitpodService().server.watchWorkspaceImageBuildLogs(workspaceInstance.workspaceId);
-    }
-
     this.setState({ workspaceInstance });
+  }
+
+  onHeadlessWorkspaceLogs(evt: HeadlessLogEvent): void {
+    console.log('onHeadlessWorkspaceLogs', evt);
+    // this.setState({ headlessLog: evt.text });
   }
 
   async ensureWorkspaceAuth(instanceID: string) {
@@ -149,6 +160,7 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
   }
 
   render() {
+    const { error } = this.state;
     let phase = StartPhase.Preparing;
     let statusMessage = <p className="text-base text-gray-400">Preparing workspace …</p>;
 
@@ -161,9 +173,7 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
       // Preparing means that we haven't actually started the workspace instance just yet, but rather
       // are still preparing for launch. This means we're building the Docker image for the workspace.
       case "preparing":
-        phase = StartPhase.Preparing;
-        statusMessage = <p className="text-base text-gray-400">Building image …</p>;
-        break;
+        return <BuildingImage workspaceId={this.state.workspaceInstance.workspaceId} />;
 
       // Pending means the workspace does not yet consume resources in the cluster, but rather is looking for
       // some space within the cluster. If for example the cluster needs to scale up to accomodate the
@@ -235,8 +245,37 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
         break;
     }
 
-    return <StartPage phase={phase}>
+    return <StartPage phase={phase} error={!!error}>
       {statusMessage}
     </StartPage>;
   }
+}
+
+export function BuildingImage(props: { workspaceId: string }) {
+  const logsEmitter = new EventEmitter();
+  const service = getGitpodService();
+
+  useEffect(() => {
+    const watchBuild = () => service.server.watchWorkspaceImageBuildLogs(props.workspaceId);
+    watchBuild();
+
+    const toDispose = service.registerClient({
+      notifyDidOpenConnection: () => watchBuild(),
+      onWorkspaceImageBuildLogs: (info: WorkspaceImageBuild.StateInfo, content?: WorkspaceImageBuild.LogContent) => {
+        if (!content) {
+          return;
+        }
+        logsEmitter.emit('logs', content.text);
+      },
+    });
+
+    return function cleanup() {
+      toDispose.dispose();
+    };
+  });
+  return <StartPage title="Building Image">
+    <Suspense fallback={<div />}>
+      <WorkspaceLogs logsEmitter={logsEmitter}/>
+    </Suspense>
+  </StartPage>;
 }
