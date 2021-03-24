@@ -365,9 +365,9 @@ export class GitpodServerImpl<Client extends GitpodClient, Server extends Gitpod
 
             const latestInstance = await this.workspaceDb.trace({}).findCurrentInstance(id);
             if (!!latestInstance) {
-                await this.guardAccess({ 
-                    kind: "workspaceInstance", 
-                    subject: latestInstance, 
+                await this.guardAccess({
+                    kind: "workspaceInstance",
+                    subject: latestInstance,
                     workspaceOwnerID: workspace.ownerId,
                     workspaceIsShared: workspace.shareable || false,
                 }, "get");
@@ -1256,17 +1256,20 @@ export class GitpodServerImpl<Client extends GitpodClient, Server extends Gitpod
     }
 
     async getEnvVars(): Promise<UserEnvVarValue[]> {
-        // Note: this operation is per-user only, hence needs no resource guard
-
         const user = this.checkUser("getEnvVars");
-        return (await this.userDB.getEnvVars(user.id)).map(v => {
-            return {
-                id: v.id,
-                name: v.name,
-                value: v.value,
-                repositoryPattern: v.repositoryPattern,
+        const result = new Map<string, { value: UserEnvVar, score: number }>();
+        for (const value of await this.userDB.getEnvVars(user.id)) {
+            if (!await this.resourceAccessGuard.canAccess({ kind: 'envVar', subject: value }, 'get')) {
+                continue;
             }
-        });
+            const score = UserEnvVar.score(value);
+            const current = result.get(value.name);
+            if (!current || score < current.score) {
+                result.set(value.name, { value, score });
+            }
+        }
+        return [...result.values()]
+            .map(({ value: { id, name, value, repositoryPattern } }) => ({ id, name, value, repositoryPattern }));
     }
 
     async setEnvVar(variable: UserEnvVarValue): Promise<void> {
@@ -1275,6 +1278,13 @@ export class GitpodServerImpl<Client extends GitpodClient, Server extends Gitpod
 
         variable.repositoryPattern = UserEnvVar.normalizeRepoPattern(variable.repositoryPattern);
         const existingVars = (await this.userDB.getEnvVars(user.id)).filter(v => !v.deleted);
+
+        const existingVar = existingVars.find(v => v.name == variable.name && v.repositoryPattern == variable.repositoryPattern);
+        if (!!existingVar) {
+            // overwrite existing variable rather than introduce a duplicate
+            variable.id = existingVar.id;
+        }
+
         if (!variable.id) {
             // this is a new variable - make sure the user does not have too many (don't DOS our database using gp env)
             const varCount = existingVars.length;
@@ -1283,23 +1293,26 @@ export class GitpodServerImpl<Client extends GitpodClient, Server extends Gitpod
             }
         }
 
-        const existingVar = existingVars.find(v => v.name == variable.name && v.repositoryPattern == variable.repositoryPattern);
-        if (!!existingVar) {
-            // overwrite existing variable rather than introduce a duplicate
-            variable.id = existingVar.id;
-        }
-
         const envvar: UserEnvVar = {
             ...variable,
             id: variable.id || uuidv4(),
             userId: user.id,
         };
+        await this.guardAccess({ kind: 'envVar', subject: envvar }, typeof variable.id === 'string' ? 'update' : 'create');
+
         await this.userDB.setEnvVar(envvar);
     }
 
     async deleteEnvVar(variable: UserEnvVarValue): Promise<void> {
         // Note: this operation is per-user only, hence needs no resource guard
         const user = this.checkUser("deleteEnvVar");
+
+        if (!variable.id && variable.name && variable.repositoryPattern) {
+            variable.repositoryPattern = UserEnvVar.normalizeRepoPattern(variable.repositoryPattern);
+            const existingVars = (await this.userDB.getEnvVars(user.id)).filter(v => !v.deleted);
+            const existingVar = existingVars.find(v => v.name == variable.name && v.repositoryPattern == variable.repositoryPattern);
+            variable.id = existingVar?.id;
+        }
 
         if (!variable.id) {
             throw new ResponseError(ErrorCodes.NOT_FOUND, "Missing ID field")
@@ -1310,6 +1323,8 @@ export class GitpodServerImpl<Client extends GitpodClient, Server extends Gitpod
             id: variable.id!,
             userId: user.id,
         };
+        await this.guardAccess({ kind: 'envVar', subject: envvar }, 'delete');
+
         await this.userDB.deleteEnvVar(envvar);
     }
 
@@ -1681,7 +1696,7 @@ export class GitpodServerImpl<Client extends GitpodClient, Server extends Gitpod
     async tsAddSlots(teamSubscriptionId: string, quantity: number): Promise<void> {
         throw new ResponseError(ErrorCodes.SAAS_FEATURE, `Not implemented in this version`);
     }
-    async tsAssignSlot(teamSubscriptionId: string, teamSubscriptionSlotId: string, identityStr: string|undefined): Promise<void> {
+    async tsAssignSlot(teamSubscriptionId: string, teamSubscriptionSlotId: string, identityStr: string | undefined): Promise<void> {
         throw new ResponseError(ErrorCodes.SAAS_FEATURE, `Not implemented in this version`);
     }
     async tsReassignSlot(teamSubscriptionId: string, teamSubscriptionSlotId: string, newIdentityStr: string): Promise<void> {
