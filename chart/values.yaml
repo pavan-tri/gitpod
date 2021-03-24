@@ -526,53 +526,50 @@ rabbitmq:
   networkPolicy:
     enabled: true
     allowExternal: true
+  plugins: 'rabbitmq_management rabbitmq_prometheus rabbitmq_web_dispatch rabbitmq_peer_discovery_k8s'
   extraPlugins: ""
   extraSecrets:
     load-definition:
       load_definition.json: |
         {
-          "global_parameters": [{
-            "name": "cluster_name",
-            "value": "gitpod"
-          }],
           "users": [{
             "name": "{{ required "rabbitmq username is required, please add a value to your values.yaml or with the helm flag --set rabbitmq.auth.username=xxxxx" .Values.auth.username }}",
             "password": "{{ required "rabbitmq password is required, please add a value to your values.yaml or with the helm flag --set rabbitmq.auth.password=xxxxx" .Values.auth.password }}",
             "tags": "administrator"
           }],
           "vhosts": [{
-            "name": "/"
+            "name": "amqp"
           }],
           "permissions": [{
             "user": "{{ .Values.auth.username }}",
-            "vhost": "\/",
+            "vhost": "amqp",
             "configure": ".*",
             "write": ".*",
             "read": ".*"
           }],
           "exchanges": [{
             "name": "gitpod.ws",
-            "vhost": "/",
+            "vhost": "amqp",
             "type": "topic",
             "durable": true
           }, {
             "name": "gitpod.ws.local",
-            "vhost": "/",
+            "vhost": "amqp",
             "type": "topic",
             "durable": true
           }, {
             "name": "wsman",
-            "vhost": "/",
+            "vhost": "amqp",
             "type": "topic",
             "durable": false
           }, {
             "name": "consensus-leader",
-            "vhost": "/",
+            "vhost": "amqp",
             "type": "fanout",
             "durable": false
           }],
           "bindings": [{
-            "vhost": "/",
+            "vhost": "amqp",
             "source": "gitpod.ws.local",
             "destination": "gitpod.ws",
             "routing_key": "#",
@@ -595,7 +592,8 @@ rabbitmq:
   extraConfiguration: |-
     load_definitions = /app/load_definition.json
     tcp_listen_options.keepalive = true
-    default_vhost = /
+    default_vhost = amqp
   pdb:
     create: true
-    minAvailable: 1
+    minAvailable: 0
+    maxUnavailable: 1
