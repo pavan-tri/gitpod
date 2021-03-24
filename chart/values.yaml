@@ -538,38 +538,38 @@ rabbitmq:
             "tags": "administrator"
           }],
           "vhosts": [{
-            "name": "amqp"
+            "name": "/"
           }],
           "permissions": [{
             "user": "{{ .Values.auth.username }}",
-            "vhost": "amqp",
+            "vhost": "/",
             "configure": ".*",
             "write": ".*",
             "read": ".*"
           }],
           "exchanges": [{
             "name": "gitpod.ws",
-            "vhost": "amqp",
+            "vhost": "/",
             "type": "topic",
             "durable": true
           }, {
             "name": "gitpod.ws.local",
-            "vhost": "amqp",
+            "vhost": "/",
             "type": "topic",
             "durable": true
           }, {
             "name": "wsman",
-            "vhost": "amqp",
+            "vhost": "/",
             "type": "topic",
             "durable": false
           }, {
             "name": "consensus-leader",
-            "vhost": "amqp",
+            "vhost": "/",
             "type": "fanout",
             "durable": false
           }],
           "bindings": [{
-            "vhost": "amqp",
+            "vhost": "/",
             "source": "gitpod.ws.local",
             "destination": "gitpod.ws",
             "routing_key": "#",
@@ -591,8 +591,6 @@ rabbitmq:
     existingSecret: load-definition
   extraConfiguration: |-
     load_definitions = /app/load_definition.json
-    tcp_listen_options.keepalive = true
-    default_vhost = amqp
   pdb:
     create: true
     minAvailable: 0
