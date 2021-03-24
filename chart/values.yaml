@@ -591,6 +591,7 @@ rabbitmq:
     existingSecret: load-definition
   extraConfiguration: |-
     load_definitions = /app/load_definition.json
+    log.default.level = debug
   pdb:
     create: true
     minAvailable: 0
