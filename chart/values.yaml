@@ -515,7 +515,7 @@ rabbitmq:
     username: ""
     password: ""
     tls:
-      enabled: true
+      enabled: false
       existingSecret: messagebus-certificates-secret-core
       existingSecretFullChain: true
   metrics:
