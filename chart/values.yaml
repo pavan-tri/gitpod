@@ -526,8 +526,6 @@ rabbitmq:
   networkPolicy:
     enabled: true
     allowExternal: true
-  plugins: 'rabbitmq_management rabbitmq_prometheus rabbitmq_web_dispatch rabbitmq_peer_discovery_k8s'
-  extraPlugins: ""
   extraSecrets:
     load-definition:
       load_definition.json: |
