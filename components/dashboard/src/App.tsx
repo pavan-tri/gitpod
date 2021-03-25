@@ -13,7 +13,9 @@ import { CreateWorkspace } from './start/CreateWorkspace';
 import StartWorkspace from './start/StartWorkspace';
 import { Login } from './Login';
 import { UserContext } from './user-context';
-import { getGitpodService } from './service/service';
+import { getGitpodService, gitpodHostUrl } from './service/service';
+import { ResponseError } from 'vscode-jsonrpc';
+import { ErrorCodes } from "@gitpod/gitpod-protocol/lib/messaging/error";
 import Header from './components/Header';
 
 const Account = React.lazy(() => import(/* webpackPrefetch: true */ './settings/Account'));
@@ -40,6 +42,33 @@ function App() {
                 setUser(await getGitpodService().server.getLoggedInUser());
             } catch (error) {
                 console.log(error);
+                if (error instanceof ResponseError) {
+                    switch (error.code) {
+                        case ErrorCodes.USER_BLOCKED:
+                            window.location.href = gitpodHostUrl.with({ pathname: "/blocked" }).toString();
+                            break;
+                        case ErrorCodes.SETUP_REQUIRED:
+                            window.location.href = gitpodHostUrl.with({ pathname: "/first-steps" }).toString();
+                            break;
+                        case ErrorCodes.USER_TERMS_ACCEPTANCE_REQUIRED:
+                            window.location.href = gitpodHostUrl.withApi({
+                                pathname: "/tos",
+                                search: `mode=update&returnTo=${encodeURIComponent(window.location.toString())}`,
+                            }).toString();
+                            break;
+                        // case ErrorCodes.NOT_AUTHENTICATED:
+                        //     if (!error.data) {
+                        //         window.location.href = gitpodHostUrl.withApi({
+                        //             pathname: '/login',
+                        //             search: 'returnTo=' + encodeURIComponent(window.location.toString()),
+                        //         }).toString();
+                        //     }
+                        //     break;
+                        case ErrorCodes.USER_DELETED:
+                            window.location.href = gitpodHostUrl.asApiLogout().toString();
+                            break;
+                    }
+                }
             }
             setLoading(false);
         })();
