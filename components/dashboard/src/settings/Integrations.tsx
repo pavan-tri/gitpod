@@ -314,7 +314,7 @@ function GitIntegrations() {
     const gitProviderMenu = (provider: AuthProviderEntry) => {
         const result: ContextMenuEntry[] = [];
         result.push({
-            title: provider.status === "verified" ? "Edit Permissions" : "Retry",
+            title: provider.status === "verified" ? "Edit Configuration" : "Activate Integration",
             onClick: () => setModal({ mode: "edit", provider }),
             separator: true,
         })
