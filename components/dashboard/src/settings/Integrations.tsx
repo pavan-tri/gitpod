@@ -6,7 +6,7 @@
 
 import * as images from '../images';
 import { AuthProviderEntry, AuthProviderInfo } from "@gitpod/gitpod-protocol";
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import ContextMenu, { ContextMenuEntry } from "../components/ContextMenu";
 import { SettingsPage } from "./SettingsPage";
 import { getGitpodService, gitpodHostUrl } from "../service/service";
@@ -421,6 +421,8 @@ function GitIntegrationModal(props: ({
     const [errorMessage, setErrorMessage] = useState<string | undefined>();
     const [validationError, setValidationError] = useState<string | undefined>();
 
+    const firstRender = useRef(true);
+
     useEffect(() => {
         if (props.mode === "edit") {
             setType(props.provider.type);
@@ -430,6 +432,14 @@ function GitIntegrationModal(props: ({
             setRedirectURL(props.provider.oauth.callBackUrl);
         }
     }, []);
+
+    useEffect(() => {
+        if (firstRender.current) {
+            firstRender.current = false
+            return
+        }
+        validate();
+    }, [clientId, clientSecret])
 
     const close = () => props.onClose && props.onClose();
     const updateList = () => props.update && props.update();
@@ -457,10 +467,10 @@ function GitIntegrationModal(props: ({
             await new Promise(resolve => setTimeout(resolve, 2000));
 
             updateList();
-            
+
             // just open the authorization window.
             /* await */ openAuthorizeWindow({ host: newProvider.host, onSuccess: updateList });
-            
+
             // close the modal, as the creation phase is done anyways.
             close();
         } catch (error) {
@@ -480,11 +490,9 @@ function GitIntegrationModal(props: ({
 
     const updateClientId = (value: string) => {
         setClientId(value);
-        validate();
     }
     const updateClientSecret = (value: string) => {
         setClientSecret(value);
-        validate();
     }
 
     const validate = () => {
@@ -546,7 +554,7 @@ function GitIntegrationModal(props: ({
             <div className="flex flex-col">
                 <span className="text-gray-500">Configure a git integration with a GitLab or GitHub self-hosted instance.</span>
             </div>
-            { props.mode === "new" && (
+            {props.mode === "new" && (
                 <div className="flex flex-col space-y-2">
                     <label htmlFor="type" className="font-medium">Provider Type</label>
                     <select name="type" value={type} disabled={props.mode !== "new"} className="rounded-md w-full"
