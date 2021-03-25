@@ -85,11 +85,13 @@ function GitProviders() {
                     separator: true,
                 });
             }
+            const connectedWithSecondProvider = authProviders.some(p => p.authProviderId !== provider.authProviderId && isConnected(p.authProviderId))
             result.push({
                 title: 'Disconnect',
+                active: connectedWithSecondProvider,
                 customFontStyle: 'text-red-600',
                 onClick: () => setDisconnectModal({ provider })
-            })
+            });
         } else {
             result.push({
                 title: 'Connect',
