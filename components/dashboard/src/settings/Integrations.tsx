@@ -544,7 +544,7 @@ function GitIntegrationModal(props: ({
     };
 
     return (<Modal visible={!!props} onClose={close}>
-        <h3 className="pb-2">{props.mode === "new" ? "New Git Itegration" : "Git Integration"}</h3>
+        <h3 className="pb-2">{props.mode === "new" ? "New Git Integration" : "Git Integration"}</h3>
         <div className="space-y-4 border-t border-b border-gray-200 mt-2 -mx-6 px-6 py-4">
             {props.mode === "edit" && props.provider.status === "pending" && (
                 <div className="flex rounded-md bg-gitpod-kumquat-light p-3">
