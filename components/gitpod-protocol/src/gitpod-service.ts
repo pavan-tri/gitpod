@@ -8,7 +8,8 @@ import {
     User, WorkspaceInfo, WorkspaceCreationResult, UserMessage, WorkspaceInstanceUser,
     WhitelistedRepository, WorkspaceImageBuild, AuthProviderInfo, Branding, CreateWorkspaceMode,
     Token, UserEnvVarValue, ResolvePluginsParams, PreparePluginUploadParams, Terms,
-    ResolvedPlugins, Configuration, InstallPluginsParams, UninstallPluginParams, UserInfo, GitpodTokenType, GitpodToken, AuthProviderEntry
+    ResolvedPlugins, Configuration, InstallPluginsParams, UninstallPluginParams, UserInfo, GitpodTokenType, 
+    GitpodToken, AuthProviderEntry, GuessGitTokenScopesParams, GuessedGitTokenScopes
 } from './protocol';
 import { JsonRpcProxy, JsonRpcServer } from './messaging/proxy-factory';
 import { Disposable, CancellationTokenSource } from 'vscode-jsonrpc';
@@ -45,7 +46,7 @@ export interface GitpodServer extends JsonRpcServer<GitpodClient>, AdminServer, 
     updateLoggedInUser(user: Partial<User>): Promise<User>;
     getAuthProviders(): Promise<AuthProviderInfo[]>;
     getOwnAuthProviders(): Promise<AuthProviderEntry[]>;
-    updateOwnAuthProvider(params: GitpodServer.UpdateOwnAuthProviderParams): Promise<void>;
+    updateOwnAuthProvider(params: GitpodServer.UpdateOwnAuthProviderParams): Promise<AuthProviderEntry>;
     deleteOwnAuthProvider(params: GitpodServer.DeleteOwnAuthProviderParams): Promise<void>;
     getBranding(): Promise<Branding>;
     getConfiguration(): Promise<Configuration>;
@@ -151,6 +152,8 @@ export interface GitpodServer extends JsonRpcServer<GitpodClient>, AdminServer, 
     resolvePlugins(workspaceId: string, params: ResolvePluginsParams): Promise<ResolvedPlugins>;
     installUserPlugins(params: InstallPluginsParams): Promise<boolean>;
     uninstallUserPlugin(params: UninstallPluginParams): Promise<boolean>;
+
+    guessGitTokenScopes(params: GuessGitTokenScopesParams): Promise<GuessedGitTokenScopes>;
 
     /**
      * gitpod.io concerns

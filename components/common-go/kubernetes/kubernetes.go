@@ -19,7 +19,6 @@ import (
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/util/flowcontrol"
 
 	"github.com/gitpod-io/gitpod/common-go/log"
 )
@@ -54,6 +53,10 @@ const (
 
 	// RequiredNodeServicesAnnotation lists all Gitpod services required on the node
 	RequiredNodeServicesAnnotation = "gitpod.io/requiredNodeServices"
+
+	// ContainerIsGoneAnnotation is used as workaround for containerd https://github.com/containerd/containerd/pull/4214
+	// which might cause workspace container status propagation to fail, which in turn would keep a workspace running indefinitely.
+	ContainerIsGoneAnnotation = "gitpod.io/containerIsGone"
 )
 
 // WorkspaceSupervisorEndpoint produces the supervisor endpoint of a workspace.
@@ -73,8 +76,6 @@ func GetOWIFromObject(pod *metav1.ObjectMeta) logrus.Fields {
 type UnlimitedRateLimiter struct {
 }
 
-var typecheck flowcontrol.RateLimiter = &UnlimitedRateLimiter{}
-
 // TryAccept returns true if a token is taken immediately. Otherwise,
 // it returns false.
 func (u *UnlimitedRateLimiter) TryAccept() bool {
@@ -83,12 +84,10 @@ func (u *UnlimitedRateLimiter) TryAccept() bool {
 
 // Accept returns once a token becomes available.
 func (u *UnlimitedRateLimiter) Accept() {
-	return
 }
 
 // Stop stops the rate limiter, subsequent calls to CanAccept will return false
 func (u *UnlimitedRateLimiter) Stop() {
-	return
 }
 
 // QPS returns QPS of this rate limiter

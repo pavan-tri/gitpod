@@ -19,11 +19,12 @@ import (
 	"github.com/sourcegraph/jsonrpc2"
 	"golang.org/x/xerrors"
 
-	"github.com/gitpod-io/gitpod/common-go/log"
+	"github.com/sirupsen/logrus"
 )
 
 // APIInterface wraps the
 type APIInterface interface {
+	AdminBlockUser(ctx context.Context, req *AdminBlockUserRequest) (err error)
 	GetLoggedInUser(ctx context.Context) (res *User, err error)
 	UpdateLoggedInUser(ctx context.Context, user *User) (res *User, err error)
 	GetAuthProviders(ctx context.Context) (res []*AuthProviderInfo, err error)
@@ -81,6 +82,7 @@ type APIInterface interface {
 	ResolvePlugins(ctx context.Context, workspaceID string, params *ResolvePluginsParams) (res *ResolvedPlugins, err error)
 	InstallUserPlugins(ctx context.Context, params *InstallPluginsParams) (res bool, err error)
 	UninstallUserPlugin(ctx context.Context, params *UninstallPluginParams) (res bool, err error)
+	GuessGitTokenScopes(ctx context.Context, params *GuessGitTokenScopesParams) (res *GuessedGitTokenScopes, err error)
 
 	InstanceUpdates(ctx context.Context, instanceID string) (<-chan *WorkspaceInstance, error)
 }
@@ -89,6 +91,8 @@ type APIInterface interface {
 type FunctionName string
 
 const (
+	// FunctionAdminBlockUser is the name of the adminBlockUser function
+	FunctionAdminBlockUser FunctionName = "adminBlockUser"
 	// FunctionGetLoggedInUser is the name of the getLoggedInUser function
 	FunctionGetLoggedInUser FunctionName = "getLoggedInUser"
 	// FunctionUpdateLoggedInUser is the name of the updateLoggedInUser function
@@ -203,6 +207,8 @@ const (
 	FunctionInstallUserPlugins FunctionName = "installUserPlugins"
 	// FunctionUninstallUserPlugin is the name of the uninstallUserPlugin function
 	FunctionUninstallUserPlugin FunctionName = "uninstallUserPlugin"
+	// FunctionGuessGitTokenScopes is the name of the guessGitTokenScopes function
+	FunctionGuessGitTokenScope FunctionName = "guessGitTokenScopes"
 
 	// FunctionOnInstanceUpdate is the name of the onInstanceUpdate callback function
 	FunctionOnInstanceUpdate = "onInstanceUpdate"
@@ -214,6 +220,7 @@ var errNotConnected = errors.New("not connected to Gitpod server")
 type ConnectToServerOpts struct {
 	Context context.Context
 	Token   string
+	Log     *logrus.Entry
 }
 
 // ConnectToServer establishes a new websocket connection to the server
@@ -240,17 +247,19 @@ func ConnectToServer(endpoint string, opts ConnectToServerOpts) (*APIoverJSONRPC
 	if opts.Token != "" {
 		reqHeader.Set("Authorization", "Bearer "+opts.Token)
 	}
-	ws := NewReconnectingWebsocket(endpoint, reqHeader)
+	ws := NewReconnectingWebsocket(endpoint, reqHeader, opts.Log)
 	go ws.Dial()
 
 	var res APIoverJSONRPC
+	res.log = opts.Log
 	res.C = jsonrpc2.NewConn(opts.Context, ws, jsonrpc2.HandlerWithError(res.handler))
 	return &res, nil
 }
 
 // APIoverJSONRPC makes JSON RPC calls to the Gitpod server is the APIoverJSONRPC message type
 type APIoverJSONRPC struct {
-	C jsonrpc2.JSONRPC2
+	C   jsonrpc2.JSONRPC2
+	log *logrus.Entry
 
 	mu   sync.RWMutex
 	subs map[string]map[chan *WorkspaceInstance]struct{}
@@ -312,7 +321,7 @@ func (gp *APIoverJSONRPC) handler(ctx context.Context, conn *jsonrpc2.Conn, req 
 	var instance WorkspaceInstance
 	err = json.Unmarshal(*req.Params, &instance)
 	if err != nil {
-		log.WithError(err).WithField("raw", string(*req.Params)).Error("cannot unmarshal instance update")
+		gp.log.WithError(err).WithField("raw", string(*req.Params)).Error("cannot unmarshal instance update")
 		return
 	}
 
@@ -325,6 +334,23 @@ func (gp *APIoverJSONRPC) handler(ctx context.Context, conn *jsonrpc2.Conn, req 
 		}
 	}
 
+	return
+}
+
+// AdminBlockUser calls adminBlockUser on the server
+func (gp *APIoverJSONRPC) AdminBlockUser(ctx context.Context, message *AdminBlockUserRequest) (err error) {
+	if gp == nil {
+		err = errNotConnected
+		return
+	}
+	var _params []interface{}
+	_params = append(_params, message)
+
+	var _result interface{}
+	err = gp.C.Call(ctx, "adminBlockUser", _params, &_result)
+	if err != nil {
+		return err
+	}
 	return
 }
 
@@ -1419,6 +1445,26 @@ func (gp *APIoverJSONRPC) UninstallUserPlugin(ctx context.Context, params *Unins
 	return
 }
 
+// GuessGitTokenScopes calls GuessGitTokenScopes on the server
+func (gp *APIoverJSONRPC) GuessGitTokenScopes(ctx context.Context, params *GuessGitTokenScopesParams) (res *GuessedGitTokenScopes, err error) {
+	if gp == nil {
+		err = errNotConnected
+		return
+	}
+	var _params []interface{}
+
+	_params = append(_params, params)
+
+	var result GuessedGitTokenScopes
+	err = gp.C.Call(ctx, "guessGitTokenScopes", _params, &result)
+	if err != nil {
+		return
+	}
+	res = &result
+
+	return
+}
+
 // PermissionName is the name of a permission
 type PermissionName string
 
@@ -1871,7 +1917,7 @@ func (strct *ResolvedPlugins) UnmarshalJSON(b []byte) error {
 				return err // invalid additionalProperty
 			}
 			if strct.AdditionalProperties == nil {
-				strct.AdditionalProperties = make(map[string]*ResolvedPlugin, 0)
+				strct.AdditionalProperties = make(map[string]*ResolvedPlugin)
 			}
 			strct.AdditionalProperties[k] = additionalValue
 		}
@@ -1918,6 +1964,12 @@ type TakeSnapshotOptions struct {
 // PreparePluginUploadParams is the PreparePluginUploadParams message type
 type PreparePluginUploadParams struct {
 	FullPluginName string `json:"fullPluginName,omitempty"`
+}
+
+// AdminBlockUserRequest is the AdminBlockUserRequest message type
+type AdminBlockUserRequest struct {
+	UserID    string `json:"id,omitempty"`
+	IsBlocked bool   `json:"blocked,omitempty"`
 }
 
 // PickAuthProviderEntryHostOwnerIDType is the PickAuthProviderEntryHostOwnerIDType message type
@@ -1969,6 +2021,26 @@ type UninstallPluginParams struct {
 // DeleteOwnAuthProviderParams is the DeleteOwnAuthProviderParams message type
 type DeleteOwnAuthProviderParams struct {
 	ID string `json:"id,omitempty"`
+}
+
+// GuessGitTokenScopesParams is the GuessGitTokenScopesParams message type
+type GuessGitTokenScopesParams struct {
+	Host         string    `json:"host"`
+	RepoURL      string    `json:"repoUrl"`
+	GitCommand   string    `json:"gitCommand"`
+	CurrentToken *GitToken `json:"currentToken"`
+}
+
+type GitToken struct {
+	Token  string   `json:"token"`
+	User   string   `json:"user"`
+	Scopes []string `json:"scopes"`
+}
+
+// GuessedGitTokenScopes is the GuessedGitTokenScopes message type
+type GuessedGitTokenScopes struct {
+	Scopes  []string `json:"scopes,omitempty"`
+	Message string   `json:"message,omitempty"`
 }
 
 // BrandingLink is the BrandingLink message type

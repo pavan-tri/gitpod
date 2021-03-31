@@ -30,6 +30,8 @@ export namespace PrepareForUserNSRequest {
 }
 
 export class PrepareForUserNSResponse extends jspb.Message { 
+    getFsShift(): FSShiftMethod;
+    setFsShift(value: FSShiftMethod): PrepareForUserNSResponse;
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): PrepareForUserNSResponse.AsObject;
@@ -43,14 +45,17 @@ export class PrepareForUserNSResponse extends jspb.Message {
 
 export namespace PrepareForUserNSResponse {
     export type AsObject = {
+        fsShift: FSShiftMethod,
     }
 }
 
 export class WriteIDMappingResponse extends jspb.Message { 
     getMessage(): string;
     setMessage(value: string): WriteIDMappingResponse;
+
     getErrorCode(): number;
     setErrorCode(value: number): WriteIDMappingResponse;
+
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WriteIDMappingResponse.AsObject;
@@ -72,12 +77,15 @@ export namespace WriteIDMappingResponse {
 export class WriteIDMappingRequest extends jspb.Message { 
     getPid(): number;
     setPid(value: number): WriteIDMappingRequest;
+
     getGid(): boolean;
     setGid(value: boolean): WriteIDMappingRequest;
+
     clearMappingList(): void;
     getMappingList(): Array<WriteIDMappingRequest.Mapping>;
     setMappingList(value: Array<WriteIDMappingRequest.Mapping>): WriteIDMappingRequest;
     addMapping(value?: WriteIDMappingRequest.Mapping, index?: number): WriteIDMappingRequest.Mapping;
+
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WriteIDMappingRequest.AsObject;
@@ -100,10 +108,13 @@ export namespace WriteIDMappingRequest {
     export class Mapping extends jspb.Message { 
         getContainerId(): number;
         setContainerId(value: number): Mapping;
+
         getHostId(): number;
         setHostId(value: number): Mapping;
+
         getSize(): number;
         setSize(value: number): Mapping;
+
 
         serializeBinary(): Uint8Array;
         toObject(includeInstance?: boolean): Mapping.AsObject;
@@ -128,8 +139,10 @@ export namespace WriteIDMappingRequest {
 export class MountProcRequest extends jspb.Message { 
     getTarget(): string;
     setTarget(value: string): MountProcRequest;
+
     getPid(): number;
     setPid(value: number): MountProcRequest;
+
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): MountProcRequest.AsObject;
@@ -168,8 +181,10 @@ export namespace MountProcResponse {
 export class UmountProcRequest extends jspb.Message { 
     getTarget(): string;
     setTarget(value: string): UmountProcRequest;
+
     getPid(): number;
     setPid(value: number): UmountProcRequest;
+
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): UmountProcRequest.AsObject;
@@ -226,6 +241,7 @@ export class TeardownResponse extends jspb.Message {
     getSuccess(): boolean;
     setSuccess(value: boolean): TeardownResponse;
 
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): TeardownResponse.AsObject;
     static toObject(includeInstance: boolean, msg: TeardownResponse): TeardownResponse.AsObject;
@@ -240,4 +256,9 @@ export namespace TeardownResponse {
     export type AsObject = {
         success: boolean,
     }
+}
+
+export enum FSShiftMethod {
+    SHIFTFS = 0,
+    FUSE = 1,
 }

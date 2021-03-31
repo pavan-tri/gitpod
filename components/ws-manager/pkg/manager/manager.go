@@ -84,15 +84,10 @@ const (
 	workspaceVolumeName = "vol-this-workspace"
 	// workspaceDir is the path within all containers where workspaceVolume is mounted to
 	workspaceDir = "/workspace"
-	// theiaDir is the path within all containers where theiaVolume is mounted to
-	theiaDir = "/theia"
 	// MarkerLabel is the label by which we identify pods which belong to ws-manager
 	markerLabel = "gpwsman"
 	// headlessLabel marks a workspace as headless
 	headlessLabel = "headless"
-
-	// theiaVersionLabelFmt is the format to produce the label a node has if Theia is available on it in a particular version
-	theiaVersionLabelFmt = "gitpod.io/theia.%s"
 )
 
 const (
@@ -184,28 +179,7 @@ func (m *Manager) StartWorkspace(ctx context.Context, req *api.StartWorkspaceReq
 	}
 	tracing.LogEvent(span, "pod created")
 
-	// the pod lifecycle independent state is a config map which stores information about a workspace
-	// prior to/beyond a workspace pod's lifetime. These config maps can exist without a pod only for
-	// a limited amount of time to avoid littering our system with obsolete config maps.
-	plisConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      getPodLifecycleIndependentCfgMapName(req.Id),
-			Namespace: m.Config.Namespace,
-			Labels:    startContext.Labels,
-			Annotations: map[string]string{
-				workspaceIDAnnotation:   req.Id,
-				servicePrefixAnnotation: getServicePrefix(req),
-			},
-		},
-	}
-	err = m.Clientset.Create(ctx, plisConfigMap)
-	if err != nil {
-		clog.WithError(err).WithField("req", req).Error("was unable to start workspace")
-		return nil, xerrors.Errorf("cannot create workspace's lifecycle independent state: %w", err)
-	}
-	tracing.LogEvent(span, "PLIS config map created")
-
-	// only regular workspaces get a service, the others are fine with just pod and plis
+	// only regular workspaces get a service, the others are fine with just pod
 	okResponse := &api.StartWorkspaceResponse{Url: startContext.WorkspaceURL}
 	if req.Type != api.WorkspaceType_REGULAR {
 		return okResponse, nil
@@ -394,20 +368,6 @@ func (m *Manager) stopWorkspace(ctx context.Context, workspaceID string, gracePe
 	// add a new one.
 	workspaceSpan := opentracing.StartSpan("workspace-stop", opentracing.FollowsFrom(opentracing.SpanFromContext(ctx).Context()))
 	tracing.ApplyOWI(workspaceSpan, wsk8s.GetOWIFromObject(&pod.ObjectMeta))
-	traceID := tracing.GetTraceID(workspaceSpan)
-	err = m.patchPodLifecycleIndependentState(ctx, workspaceID, func(plis *podLifecycleIndependentState) bool {
-		t := time.Now().UTC()
-		status.Phase = api.WorkspacePhase_STOPPING
-		plis.StoppingSince = &t
-		plis.LastPodStatus = status
-		if pod.Status.HostIP != "" {
-			plis.HostIP = pod.Status.HostIP
-		}
-		return true
-	}, addMark(wsk8s.TraceIDAnnotation, traceID))
-	if err != nil {
-		log.WithError(err).Warn("was unable to add new traceID annotation to workspace")
-	}
 
 	servicePrefix, ok := pod.Annotations[servicePrefixAnnotation]
 	if !ok {
@@ -1016,7 +976,6 @@ func (m *Manager) GetWorkspaces(ctx context.Context, req *api.GetWorkspacesReque
 
 // getAllWorkspaceObjects retturns all (possibly incomplete) workspaceObjects of all workspaces this manager is currently aware of.
 // If a workspace has a pod that pod is part of the returned WSO.
-// If a workspace has a PLIS that PLIS is part of the returned WSO.
 func (m *Manager) getAllWorkspaceObjects(ctx context.Context) ([]workspaceObjects, error) {
 	//nolint:ineffassign
 	span, ctx := tracing.FromContext(ctx, "getAllWorkspaceObjects")
@@ -1024,11 +983,6 @@ func (m *Manager) getAllWorkspaceObjects(ctx context.Context) ([]workspaceObject
 
 	var pods corev1.PodList
 	err := m.Clientset.List(ctx, &pods, workspaceObjectListOptions(m.Config.Namespace))
-	if err != nil {
-		return nil, xerrors.Errorf("cannot list workspaces: %w", err)
-	}
-	var plis corev1.ConfigMapList
-	err = m.Clientset.List(ctx, &plis, workspaceObjectListOptions(m.Config.Namespace))
 	if err != nil {
 		return nil, xerrors.Errorf("cannot list workspaces: %w", err)
 	}
@@ -1061,25 +1015,6 @@ func (m *Manager) getAllWorkspaceObjects(ctx context.Context) ([]workspaceObject
 			theiaServiceIndex[getTheiaServiceName(sp)] = wso
 			portServiceIndex[getPortsServiceName(sp)] = wso
 		}
-	}
-	for _, plis := range plis.Items {
-		id, ok := plis.Annotations[workspaceIDAnnotation]
-		if !ok {
-			log.WithField("configmap", plis.Name).Warn("PLIS has no workspace ID")
-			span.LogKV("warning", "PLIS has no workspace ID", "podName", plis.Name)
-			span.SetTag("error", true)
-			continue
-		}
-
-		// don't references to loop variables - they magically change their value
-		pliscopy := plis
-
-		wso, ok := wsoIndex[id]
-		if !ok {
-			wso = &workspaceObjects{}
-			wsoIndex[id] = wso
-		}
-		wso.PLIS = &pliscopy
 	}
 
 	for _, service := range services.Items {

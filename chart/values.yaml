@@ -15,6 +15,7 @@ installation:
   cluster: "00"
   shortname: ""
 license: ""
+installNetworkPolicies: true
 installPodSecurityPolicies: true
 imagePullPolicy: IfNotPresent
 resources:
@@ -54,19 +55,19 @@ db:
   host: db
   port: 3306
   password: test
-messagebus:
-  username: "override-me"
-  password: "override-me"
-  secretName: messagebus-certificates-secret-core
+
 defaults:
   dnsPolicy: ClusterFirst
   restartPolicy: Always
   terminationGracePeriodSeconds: 30
+
 dbEncryptionKeys:
   secretName: null
   file: secrets/encryption-key.json
+
 serviceWaiter:
   imageName: "service-waiter"
+
 tracing: {}
 authProviders: []
 # Example authProvider configurations below:
@@ -126,7 +127,7 @@ branding:
         url: https://www.gitpod.io/terms/
 workspaceScheduler: workspace-scheduler
 serverProxyApiKey: "fF7+aCPvF9Pa0AEjmoZ+yWVh6PqBjM5VEA0wyQs3FH4="
-previewFeatureFlags: ["user_namespace"]
+previewFeatureFlags: []
 
 components:
 
@@ -241,6 +242,19 @@ components:
       socket: /var/lib/gitpod/registry-facade
     serviceType: "ClusterIP"
 
+  # enabled cronjob to restart the proxy deployment
+  restarter:
+    enabled: false
+    schedule: '0 0 * * 0'
+    image: bitnami/kubectl:latest
+    targets:
+    - name: proxy
+      kind: deployment
+    - name: registry-facade
+      kind: daemonset
+    - name: ws-proxy
+      kind: deployment
+
   server:
     name: "server"
     replicas: 1
@@ -305,28 +319,6 @@ components:
             - 1.1.1.1
             - 8.8.8.8
             dnsPolicy: None
-
-  messagebus:
-    name: "messagebus"
-    resources:
-      cpu: 100m
-      memory: 128Mi
-    ports:
-      amqp:
-        expose: true
-        containerPort: 5672
-      epmd:
-        expose: true
-        containerPort: 4369
-      ui:
-        expose: true
-        containerPort: 15672
-      dist:
-        expose: true
-        containerPort: 25672
-      metrics:
-        expose: true
-        containerPort: 15692
 
   proxy:
     name: "proxy"
@@ -400,6 +392,11 @@ components:
       # - /run/containerd/io.containerd.runtime.v1.linux/moby
       # - /run/containerd/io.containerd.runtime.v2.task/k8s.io
     userNamespaces:
+      # Valid values for fsShift are:
+      #    fuse: uses fuse-overlayfs
+      #    shiftfs: uses shiftfs. Depending on the underlying OS/distribution you
+      #             might want to enable the shiftfsModuleLoader.
+      fsShift: shiftfs
       shiftfsModuleLoader:
         enabled: false
         imageName: "shiftfs-module-loader"
@@ -436,9 +433,6 @@ components:
   cerc:
     name: cerc
     disabled: true
-    resources:
-      cpu: 100m
-      memory: 32Mi
     dependsOn:
       - "cerc-configmap.yaml"
     ports:
@@ -515,3 +509,108 @@ mysql:
   extraVolumeMounts: |
     - mountPath: /docker-entrypoint-initdb.d
       name: init-scripts
+
+rabbitmq:
+  fullnameOverride: "messagebus"
+  persistence:
+    enabled: false
+  replicaCount: 1
+  auth:
+    username: ""
+    password: ""
+    tls:
+      enabled: true
+      existingSecret: messagebus-certificates-secret-core
+      existingSecretFullChain: true
+  metrics:
+    enabled: true
+  networkPolicy:
+    enabled: true
+    allowExternal: true
+  plugins: "rabbitmq_management rabbitmq_peer_discovery_k8s"
+  extraPlugins: "rabbitmq_shovel rabbitmq_shovel_management"
+  extraSecrets:
+    load-definition:
+      load_definition.json: |
+        {
+          "users": [{
+            "name": {{ required "rabbitmq username is required, please add a value to your values.yaml or with the helm flag --set rabbitmq.auth.username=xxxxx" .Values.auth.username | quote }},
+            "password": {{ required "rabbitmq password is required, please add a value to your values.yaml or with the helm flag --set rabbitmq.auth.password=xxxxx" .Values.auth.password | quote }},
+            "tags": "administrator"
+          }],
+          "vhosts": [{
+            "name": "/"
+          }],
+          "permissions": [{
+            "user": {{ .Values.auth.username | quote }},
+            "vhost": "/",
+            "configure": ".*",
+            "write": ".*",
+            "read": ".*"
+          }],
+          "exchanges": [{
+            "name": "gitpod.ws",
+            "vhost": "/",
+            "type": "topic",
+            "durable": true,
+            "auto_delete": false,
+          }, {
+            "name": "gitpod.ws.local",
+            "vhost": "/",
+            "type": "topic",
+            "durable": true,
+            "auto_delete": false,
+          }, {
+            "name": "wsman",
+            "vhost": "/",
+            "type": "topic",
+            "durable": false,
+            "auto_delete": false,
+          }, {
+            "name": "consensus-leader",
+            "vhost": "/",
+            "type": "fanout",
+            "durable": false,
+            "auto_delete": false,
+          }],
+          "bindings": [{
+            "source": "gitpod.ws.local",
+            "vhost": "/",
+            "destination": "gitpod.ws",
+            "destination_type": "exchange",
+            "routing_key": "#",
+            "arguments": {}
+          }],
+          "queues": [{
+            "name": "consensus-peers",
+            "vhost": "/",
+            "durable": false,
+            "auto_delete": false,
+            "arguments": {}
+          }, {
+            "name": "pwsupdatable",
+            "vhost": "/",
+            "durable": true,
+            "auto_delete": false,
+            "arguments": {}
+          }],
+          "policies": [{
+            "name": "ha-all",
+            "vhost": "/",
+            "pattern": ".*",
+            "definition": {
+              "ha-mode": "all",
+              "ha-sync-mode": "automatic",
+              "ha-sync-batch-size": 5
+            }
+          }]
+        }
+  loadDefinition:
+    enabled: true
+    existingSecret: load-definition
+  extraConfiguration: |
+    load_definitions = /app/load_definition.json
+  pdb:
+    create: true
+    minAvailable: 0
+    maxUnavailable: 1

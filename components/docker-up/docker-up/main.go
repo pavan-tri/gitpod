@@ -2,15 +2,24 @@
 // Licensed under the GNU Affero General Public License (AGPL).
 // See License-AGPL.txt in the project root for license information.
 
+// Download files to be embed in the binary
+//go:generate ./dependencies.sh
+
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
+	"embed"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,6 +39,11 @@ var opts struct {
 	UserAccessibleSocket bool
 	Verbose              bool
 }
+
+//go:embed docker.tgz
+//go:embed docker-compose
+//go:embed slirp4netns
+var binaries embed.FS
 
 func main() {
 	self, err := os.Executable()
@@ -215,12 +229,14 @@ func runOutsideNetns() error {
 }
 
 func ensurePrerequisites() error {
-	commands := map[string]string{
-		"dockerd":     "docker.io",
-		"slirp4netns": "slirp4netns",
+	commands := map[string]func() error{
+		"dockerd":        installDocker,
+		"docker-compose": installDockerCompose,
+		"iptables":       installIptables,
+		"slirp4netns":    installSlirp4netns,
 	}
 
-	var pkgs []string
+	var pkgs []func() error
 	for cmd, pkg := range commands {
 		if pth, _ := exec.LookPath(cmd); pth == "" {
 			log.WithField("command", cmd).Warn("missing prerequisite")
@@ -235,22 +251,126 @@ func ensurePrerequisites() error {
 	if !opts.AutoInstall {
 		return errMissingPrerequisites
 	}
-	if pth, _ := exec.LookPath("apt-get"); pth == "" {
-		return errMissingPrerequisites
+
+	for _, pkg := range pkgs {
+		err := pkg()
+		if err != nil {
+			return err
+		}
 	}
 
-	args := []string{"install", "-y"}
-	args = append(args, pkgs...)
-	cmd := exec.Command("apt-get", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Pdeathsig: syscall.SIGKILL,
-	}
-	return cmd.Run()
+	return nil
 }
 
 type message struct {
 	Stage int `json:"stage"`
+}
+
+func installDocker() error {
+	binary, err := binaries.Open("docker.tgz")
+	if err != nil {
+		return err
+	}
+	defer binary.Close()
+
+	gzipReader, err := gzip.NewReader(binary)
+	if err != nil {
+		return err
+	}
+
+	tarReader := tar.NewReader(gzipReader)
+	for {
+		hdr, err := tarReader.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+
+			return fmt.Errorf("Unable to extract container: %v\n", err)
+		}
+
+		hdrInfo := hdr.FileInfo()
+		dstpath := path.Join("/usr/bin", strings.TrimPrefix(hdr.Name, "docker/"))
+		mode := hdrInfo.Mode()
+
+		switch hdr.Typeflag {
+		case tar.TypeReg, tar.TypeRegA:
+			file, err := os.OpenFile(dstpath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+			if err != nil {
+				return fmt.Errorf("unable to create file: %v", err)
+			}
+
+			if _, err := io.Copy(file, tarReader); err != nil {
+				file.Close()
+				return fmt.Errorf("unable to write file: %v", err)
+			}
+
+			file.Close()
+		}
+
+		os.Chtimes(dstpath, hdr.AccessTime, hdr.ModTime)
+	}
+
+	return nil
+}
+
+func installDockerCompose() error {
+	return installBinary("docker-compose", "/usr/local/bin/docker-compose")
+}
+
+func installIptables() error {
+	pth, _ := exec.LookPath("apt-get")
+	if pth != "" {
+		cmd := exec.Command("/bin/sh", "-c", "apt-get update && apt-get install -y iptables xz-utils")
+		cmd.Stdin = os.Stdin
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Pdeathsig: syscall.SIGKILL,
+		}
+
+		return cmd.Run()
+	}
+
+	pth, _ = exec.LookPath("apk")
+	if pth != "" {
+		cmd := exec.Command("/bin/sh", "-c", "apk add --no-cache iptables xz")
+		cmd.Stdin = os.Stdin
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Pdeathsig: syscall.SIGKILL,
+		}
+
+		return cmd.Run()
+	}
+
+	// the container is not debian/ubuntu/alpine
+	log.WithField("command", "dockerd").Warn("Please install dockerd dependencies: iptables")
+	return nil
+}
+
+func installSlirp4netns() error {
+	return installBinary("slirp4netns", "/usr/bin/slirp4netns")
+}
+
+func installBinary(name, dst string) error {
+	binary, err := binaries.Open(name)
+	if err != nil {
+		return err
+	}
+	defer binary.Close()
+
+	file, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, binary)
+	if err != nil {
+		return err
+	}
+
+	return os.Chmod(dst, 0755)
 }

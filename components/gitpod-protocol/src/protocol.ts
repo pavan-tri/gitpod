@@ -98,6 +98,8 @@ export interface AdditionalUserData {
     emailNotificationSettings?: EmailNotificationSettings;
     featurePreview?: boolean;
     ideSettings?: IDESettings;
+    // key is the name of the news, string the iso date when it was seen
+    whatsNewSeen?: { [key: string]: string }
 }
 
 export interface EmailNotificationSettings {
@@ -146,7 +148,7 @@ export interface UserFeatureSettings {
  * The values of this type MUST MATCH enum values in WorkspaceFeatureFlag from ws-manager/client/core_pb.d.ts
  * If they don't we'll break things during workspace startup.
  */
-export const WorkspaceFeatureFlags = { "full_workspace_backup": undefined, "fixed_resources": undefined, "user_namespace": undefined };
+export const WorkspaceFeatureFlags = { "full_workspace_backup": undefined, "fixed_resources": undefined };
 export type NamedWorkspaceFeatureFlag = keyof (typeof WorkspaceFeatureFlags);
 
 export interface UserEnvVarValue {
@@ -165,6 +167,28 @@ export namespace UserEnvVar {
 
     export function normalizeRepoPattern(pattern: string) {
         return pattern.toLocaleLowerCase();
+    }
+
+    export function score(value: UserEnvVarValue): number {
+        // We use a score to enforce precedence:
+        //      value/value = 0
+        //      value/*     = 1
+        //      */value     = 2
+        //      */*         = 3
+        //      #/#         = 4 (used for env vars passed through the URL)
+        // the lower the score, the higher the precedence.
+        const [ownerPattern, repoPattern] = splitRepositoryPattern(value.repositoryPattern);
+        let score = 0;
+        if (repoPattern == "*") {
+            score += 1;
+        }
+        if (ownerPattern == '*') {
+            score += 2;
+        }
+        if (ownerPattern == "#" || repoPattern == "#") {
+            score = 4;
+        }
+        return score;
     }
 
     export function filter<T extends UserEnvVarValue>(vars: T[], owner: string, repo: string): T[] {
@@ -202,25 +226,7 @@ export namespace UserEnvVar {
             let minscore = 10;
             let bestCandidate: T | undefined;
             for (const e of candidates) {
-                // We use a score to enforce precedence:
-                //      value/value = 0
-                //      value/*     = 1
-                //      */value     = 2
-                //      */*         = 3
-                //      #/#         = 4 (used for env vars passed through the URL)
-                // the lower the score, the higher the precedence.
-                const [ownerPattern, repoPattern] = splitRepositoryPattern(e.repositoryPattern);
-                let score = 0;
-                if (repoPattern == "*") {
-                    score += 1;
-                }
-                if (ownerPattern == '*') {
-                    score += 2;
-                }
-                if (ownerPattern == "#" || repoPattern == "#") {
-                    score = 4;
-                }
-
+                const score = UserEnvVar.score(e);
                 if (!bestCandidate || score < minscore) {
                     minscore = score;
                     bestCandidate = e;
@@ -232,7 +238,7 @@ export namespace UserEnvVar {
         return result;
     }
 
-    function splitRepositoryPattern(repositoryPattern: string): string[] {
+    export function splitRepositoryPattern(repositoryPattern: string): string[] {
         const patterns = repositoryPattern.split('/');
         const repoPattern = patterns.pop() || "";
         const ownerPattern = patterns.join('/');
@@ -502,6 +508,24 @@ export interface UninstallPluginParams {
     pluginId: string;
 }
 
+export interface GuessGitTokenScopesParams {
+    host: string
+    repoUrl: string
+	gitCommand: string
+    currentToken: GitToken
+}
+
+export interface GitToken {
+    token: string
+    user: string
+    scopes: string[]
+}
+
+export interface GuessedGitTokenScopes {
+    message?: string
+    scopes?: string[]
+}
+
 export type ResolvedPluginKind = 'user' | 'workspace' | 'builtin';
 
 export interface ResolvedPlugins {
@@ -527,10 +551,10 @@ export interface WorkspaceConfig {
     gitConfig?: { [config: string]: string };
     github?: GithubAppConfig;
     vscode?: VSCodeConfig;
-    
+
     /**
      * Where the config object originates from.
-     * 
+     *
      * repo - from the repository
      * definitly-gp - from github.com/gitpod-io/definitely-gp
      * derived - computed based on analyzing the repository
@@ -614,7 +638,7 @@ export interface PrebuiltWorkspace {
 
 export namespace PrebuiltWorkspace {
     export function isDone(pws: PrebuiltWorkspace) {
-        return pws.state === "available" || pws.state === "timeout" || pws.state === 'aborted';
+        return pws.state === "available" || pws.state === "timeout" || pws.state === 'aborted';
     }
 
     export function isAvailable(pws: PrebuiltWorkspace) {
@@ -957,6 +981,12 @@ export interface WorkspaceInfo {
     latestInstance?: WorkspaceInstance
 }
 
+export namespace WorkspaceInfo {
+    export function lastActiveISODate(info: WorkspaceInfo): string {
+        return info.latestInstance?.creationTime || info.workspace.creationTime;
+    }
+}
+
 export type RunningWorkspaceInfo = WorkspaceInfo & { latestInstance: WorkspaceInstance };
 
 export interface WorkspaceCreationResult {
@@ -1056,8 +1086,17 @@ export interface OAuth2Config {
 export namespace AuthProviderEntry {
     export type Type = "GitHub" | "GitLab" | string;
     export type Status = "pending" | "verified";
-    export type NewEntry = Pick<AuthProviderEntry, "ownerId" | "host" | "type">;
+    export type NewEntry = Pick<AuthProviderEntry, "ownerId" | "host" | "type"> & { clientId?: string, clientSecret?: string };
     export type UpdateEntry = Pick<AuthProviderEntry, "id" | "ownerId"> & Pick<OAuth2Config, "clientId" | "clientSecret">;
+    export function redact(entry: AuthProviderEntry): AuthProviderEntry {
+        return {
+            ...entry,
+            oauth: {
+                ...entry.oauth,
+                clientSecret: "redacted"
+            }
+        }
+    }
 }
 
 export interface Branding {
