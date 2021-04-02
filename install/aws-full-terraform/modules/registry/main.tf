@@ -120,7 +120,7 @@ resource "aws_iam_access_key" "gitpod_registry" {
 }
 
 data "template_file" "ecr_regeneration_script" {
-    template = file("${path.module}/template/regenerate-ecr.tpl")
+    template = file("${path.module}/templates/regenerate-ecr.tpl")
     vars = {
         host = "${aws_ecr_repository.gitpod_registry.registry_id}.dkr.ecr.${var.region}.amazonaws.com"
         secret_name = local.secret_name
@@ -132,7 +132,7 @@ data "template_file" "ecr_regeneration_script" {
 
 resource "kubernetes_cron_job" "ecr_regeneration_cron" {
   metadata {
-    name = "ecr_regeneration_cron"
+    name = "ecr-regeneration-cron"
   }
   spec {
     concurrency_policy            = "Allow"
