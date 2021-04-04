@@ -4,5 +4,5 @@
  */
 
 output "external_dns" {
-  value = data.kubernetes_service.proxy.load_balancer_ingress.0.hostname
+  value = data.kubernetes_service.proxy.status.0.load_balancer.0.ingress.0.hostname
 }

@@ -9,7 +9,7 @@ resource "helm_release" "cert_manager" {
   repository       = "https://charts.jetstack.io"
   namespace        = var.cert_manager.namespace
   chart            = var.cert_manager.chart
-  version          = "v0.16.0"
+  version          = "v1.1.1"
   recreate_pods    = true
   create_namespace = true
   wait             = true
