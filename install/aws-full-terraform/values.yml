@@ -1,11 +1,12 @@
 # Insert Additional Values Here
 version: main.659
 imagePrefix: eu.gcr.io/gitpod-core-dev/build/
-wsDaemon:
-  containerRuntime:
-    nodeRoots:
-      - /var/lib
-      - /run/containerd/io.containerd.runtime.v1.linux/moby
+components:
+  wsDaemon:
+    containerRuntime:
+      nodeRoots:
+        - /var/lib
+        - /run/containerd/io.containerd.runtime.v1.linux/moby
 rabbitmq:
   # ensure shovels are configured on boot
   shovels:
