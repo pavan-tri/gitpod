@@ -7,9 +7,10 @@
 import { User } from "@gitpod/gitpod-protocol";
 import { useContext, useState } from "react";
 import Modal from "../components/Modal";
+import { PageWithSubMenu } from "../components/PageWithSubMenu";
 import { getGitpodService, gitpodHostUrl } from "../service/service";
 import { UserContext } from "../user-context";
-import { SettingsPage } from "./SettingsPage";
+import settingsMenu from "./settings-menu";
 
 export default function Account() {
     const { user } = useContext(UserContext);
@@ -34,7 +35,7 @@ export default function Account() {
                     <li className="ml-5">All your workspaces and related data will be deleted and cannot be restored afterwards.</li>
                     <li className="ml-5">Your subscription will be cancelled. If you obtained a Gitpod subscription through the GitHub marketplace, you need to cancel your plan there.</li>
                 </ol>
-                <p className="pt-4 pb-2 text-gray-600 text-base font-bold">Type your email to confirm</p>
+                <p className="pt-4 pb-2 text-gray-600 text-base font-semibold">Type your email to confirm</p>
                 <input className="w-full" type="text" onChange={e => setTypedEmail(e.target.value)}></input>
             </div>
             <div className="flex justify-end mt-6">
@@ -43,9 +44,9 @@ export default function Account() {
             </div>
         </Modal>
 
-        <SettingsPage title='Account' subtitle='Manage account and git configuration.'>
+        <PageWithSubMenu subMenu={settingsMenu}  title='Account' subtitle='Manage account and git configuration.'>
             <h3>Profile</h3>
-            <p className="text-base text-gray-500 pb-4">The following information will be used to set up git configuration. You can override git author name and email per project by using the default environment variables <span className="text-gray--300 bg-gray-100 px-1.5 py-1 rounded-md text-sm font-mono font-medium">GIT_AUTHOR_NAME</span> and <span className="text-gray--300 bg-gray-100 px-1.5 py-1 rounded-md text-sm font-mono font-medium">GIT_COMMITTER_EMAIL</span>.</p>
+            <p className="text-base text-gray-500 pb-4 max-w-2xl">The following information will be used to set up git configuration. You can override git author name and email per project by using the default environment variables <span className="text-gray--300 bg-gray-100 px-1.5 py-1 rounded-md text-sm font-mono font-medium">GIT_AUTHOR_NAME</span> and <span className="text-gray--300 bg-gray-100 px-1.5 py-1 rounded-md text-sm font-mono font-medium">GIT_COMMITTER_EMAIL</span>.</p>
             <div className="flex flex-col lg:flex-row">
                 <div>
                     <div className="mt-4">
@@ -68,6 +69,6 @@ export default function Account() {
             <h3 className="mt-12">Delete Account</h3>
             <p className="text-base text-gray-500 pb-4">This action will remove all the data associated with your account in Gitpod.</p>
             <button className="danger secondary" onClick={() => setModal(true)}>Delete Account</button>
-        </SettingsPage>
+        </PageWithSubMenu>
     </div>;
 }

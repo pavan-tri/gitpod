@@ -9,8 +9,9 @@ import { useEffect, useRef, useState } from "react";
 import ContextMenu from "../components/ContextMenu";
 import Modal from "../components/Modal";
 import { getGitpodService } from "../service/service";
-import { SettingsPage } from "./SettingsPage";
 import ThreeDots from '../icons/ThreeDots.svg';
+import { PageWithSubMenu } from "../components/PageWithSubMenu";
+import settingsMenu from "./settings-menu";
 
 interface EnvVarModalProps {
     envVar: UserEnvVarValue;
@@ -52,7 +53,7 @@ function AddEnvVarModal(p: EnvVarModalProps) {
     return <Modal visible={true} onClose={p.onClose} onEnter={save}>
         <h3 className="mb-4">{isNew ? 'New' : 'Edit'} Variable</h3>
         <div className="border-t border-b -mx-6 px-6 py-4 flex flex-col">
-            {error ? <div className="bg-gitpod-kumquat-light rounded-md p-3 text-red-500 text-sm mb-2">
+            {error ? <div className="bg-gitpod-kumquat-light rounded-md p-3 text-gitpod-red text-sm mb-2">
                 {error}
             </div> : null}
             <div>
@@ -141,7 +142,7 @@ export default function EnvVars() {
         return '';
     };
 
-    return <SettingsPage title='Variables' subtitle='Configure environment variables for all workspaces.'>
+    return <PageWithSubMenu subMenu={settingsMenu}  title='Variables' subtitle='Configure environment variables for all workspaces.'>
         {isAddEnvVarModalVisible ? <AddEnvVarModal
             save={save}
             envVar={currentEnvVar}
@@ -203,5 +204,5 @@ export default function EnvVars() {
                 </div>
             </div>
         }
-    </SettingsPage>;
+    </PageWithSubMenu>;
 }

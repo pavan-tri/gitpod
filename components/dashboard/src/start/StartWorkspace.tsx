@@ -8,8 +8,10 @@ import EventEmitter from "events";
 import React, { useEffect, Suspense } from "react";
 import { DisposableCollection, WorkspaceInstance, WorkspaceImageBuild, Workspace, WithPrebuild } from "@gitpod/gitpod-protocol";
 import { HeadlessLogEvent } from "@gitpod/gitpod-protocol/lib/headless-workspace-log";
+import ContextMenu, { ContextMenuEntry } from "../components/ContextMenu";
+import CaretDown from "../icons/CaretDown.svg";
 import { getGitpodService, gitpodHostUrl } from "../service/service";
-import { StartPage, StartPhase } from "./StartPage";
+import { StartPage, StartPhase, StartWorkspaceError } from "./StartPage";
 
 const WorkspaceLogs = React.lazy(() => import('./WorkspaceLogs'));
 
@@ -21,14 +23,8 @@ export interface StartWorkspaceState {
   startedInstanceId?: string;
   workspaceInstance?: WorkspaceInstance;
   workspace?: Workspace;
+  hasImageBuildLogs?: boolean;
   error?: StartWorkspaceError;
-  ideFrontendFailureCause?: string;
-}
-
-export interface StartWorkspaceError {
-  message?: string;
-  code?: number;
-  data?: any;
 }
 
 export default class StartWorkspace extends React.Component<StartWorkspaceProps, StartWorkspaceState> {
@@ -43,8 +39,10 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
     if (this.runsInIFrame()) {
       const setStateEventListener = (event: MessageEvent) => {
         if (event.data.type === 'setState' && 'state' in event.data && typeof event.data['state'] === 'object') {
-          // This seems to only set ideFrontendFailureCause
-          this.setState(event.data.state);
+          if (event.data.state.ideFrontendFailureCause) {
+            const error = { message: event.data.state.ideFrontendFailureCause };
+            this.setState({ error });
+          }
         }
       }
       window.addEventListener('message', setStateEventListener, false);
@@ -123,15 +121,19 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
       return;
     }
 
-    // Stopped and headless: the prebuild is done, let's try to use it!
-    if (workspaceInstance.status.phase === 'stopped' && this.state.workspace?.type !== 'regular') {
-      const contextUrl = this.state.workspace?.contextURL.replace('prebuild/', '')!;
-      this.redirectTo(gitpodHostUrl.withContext(contextUrl).toString());
+    if (workspaceInstance.status.phase === 'preparing') {
+      this.setState({ hasImageBuildLogs: true });
     }
 
     let error;
     if (workspaceInstance.status.conditions.failed) {
       error = { message: workspaceInstance.status.conditions.failed };
+    }
+
+    // Successfully stopped and headless: the prebuild is done, let's try to use it!
+    if (!error && workspaceInstance.status.phase === 'stopped' && this.state.workspace?.type !== 'regular') {
+      const contextUrl = this.state.workspace?.contextURL.replace('prebuild/', '')!;
+      this.redirectTo(gitpodHostUrl.withContext(contextUrl).toString());
     }
 
     this.setState({ workspaceInstance, error });
@@ -173,7 +175,7 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
     let title = !error ? undefined : 'Oh, no! Something went wrong!';
     let statusMessage = !error
       ? <p className="text-base text-gray-400">Preparing workspace …</p>
-      : <p className="text-base text-red-500 w-96">{error.message}</p>;
+      : <p className="text-base text-gitpod-red w-96">{error.message}</p>;
 
     switch (this.state?.workspaceInstance?.status.phase) {
       // unknown indicates an issue within the system in that it cannot determine the actual phase of
@@ -184,7 +186,7 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
       // Preparing means that we haven't actually started the workspace instance just yet, but rather
       // are still preparing for launch. This means we're building the Docker image for the workspace.
       case "preparing":
-        return <ImageBuildView workspaceId={this.state.workspaceInstance.workspaceId} />;
+        return <ImageBuildView workspaceId={this.state.workspaceInstance.workspaceId} onStartWithDefaultImage={() => this.startWorkspace(true, true)} />;
 
       // Pending means the workspace does not yet consume resources in the cluster, but rather is looking for
       // some space within the cluster. If for example the cluster needs to scale up to accomodate the
@@ -233,15 +235,15 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
         }
         phase = StartPhase.Stopping;
         statusMessage = <div>
-          <div className="flex space-x-3 items-center rounded-xl m-auto px-4 h-16 w-72 mt-4 bg-gray-100">
+          <div className="flex space-x-3 items-center text-left rounded-xl m-auto px-4 h-16 w-72 mt-4 bg-gray-100">
             <div className="rounded-full w-3 h-3 text-sm bg-gitpod-kumquat">&nbsp;</div>
             <div>
               <p className="text-gray-700 font-semibold">{this.state.workspaceInstance.workspaceId}</p>
-              <a href={this.state.workspace?.contextURL}><p className="w-56 truncate hover:underline" >{this.state.workspace?.contextURL}</p></a>
+              <a target="_parent" href={this.state.workspace?.contextURL}><p className="w-56 truncate hover:text-blue-600" >{this.state.workspace?.contextURL}</p></a>
             </div>
           </div>
-          <div className="mt-10 flex">
-            <button className="secondary mx-auto" onClick={() => this.redirectTo(gitpodHostUrl.asDashboard().toString())}>Go to Dashboard</button>
+          <div className="mt-10 flex justify-center">
+            <a target="_parent" href={gitpodHostUrl.asDashboard().toString()}><button className="secondary">Go to Dashboard</button></a>
           </div>
         </div>;
         break;
@@ -249,72 +251,77 @@ export default class StartWorkspace extends React.Component<StartWorkspaceProps,
       // Stopped means the workspace ended regularly because it was shut down.
       case "stopped":
         phase = StartPhase.Stopped;
+        if (this.state.hasImageBuildLogs) {
+          return <ImageBuildView workspaceId={this.state.workspaceInstance.workspaceId} onStartWithDefaultImage={() => this.startWorkspace(true, true)} phase={phase} error={error} />;
+        }
         if (!isHeadless && this.state.workspaceInstance.status.conditions.timeout) {
           title = 'Timed Out';
         }
-        const pendingChanges = getPendingChanges(this.state.workspaceInstance);
         statusMessage = <div>
-          <div className="flex space-x-3 items-center rounded-xl m-auto px-4 h-16 w-72 mt-4 bg-gray-100">
+          <div className="flex space-x-3 items-center text-left rounded-xl m-auto px-4 h-16 w-72 mt-4 bg-gray-100">
             <div className="rounded-full w-3 h-3 text-sm bg-gray-300">&nbsp;</div>
             <div>
               <p className="text-gray-700 font-semibold">{this.state.workspaceInstance.workspaceId}</p>
-              {pendingChanges.length > 0 &&
-                <p className="text-red-500">{pendingChanges.length} Change{pendingChanges.length === 1 ? '' : 's'}</p>
-              }
-              <a href={this.state.workspace?.contextURL}><p className="w-56 truncate hover:underline" >{this.state.workspace?.contextURL}</p></a>
+              <a target="_parent" href={this.state.workspace?.contextURL}><p className="w-56 truncate hover:text-blue-600" >{this.state.workspace?.contextURL}</p></a>
             </div>
           </div>
-          <div className="mt-10 flex space-x-2">
-            <button className="secondary" onClick={() => this.redirectTo(gitpodHostUrl.asDashboard().toString())}>Go to Dashboard</button>
-            <button onClick={() => this.redirectTo(gitpodHostUrl.asStart(this.state.workspaceInstance?.workspaceId).toString())}>Open Workspace</button>
+          <PendingChangesDropdown workspaceInstance={this.state.workspaceInstance} />
+          <div className="mt-10 justify-center flex space-x-2">
+            <a target="_parent" href={gitpodHostUrl.asDashboard().toString()}><button className="secondary">Go to Dashboard</button></a>
+            <a target="_parent" href={gitpodHostUrl.asStart(this.state.workspaceInstance?.workspaceId).toString()}><button>Open Workspace</button></a>
           </div>
         </div>;
         break;
     }
 
-    return <StartPage phase={phase} error={!!error} title={title}>
+    return <StartPage phase={phase} error={error} title={title}>
       {statusMessage}
-      {error && <div>
-        <button className="mt-8 secondary" onClick={() => this.redirectTo(gitpodHostUrl.asDashboard().toString())}>Go back to dashboard</button>
-        <p className="mt-14 text-base text-gray-400 flex space-x-2">
-          <a href="https://www.gitpod.io/docs/">Docs</a>
-          <span>—</span>
-          <a href="https://status.gitpod.io/">Status</a>
-          <span>—</span>
-          <a href="https://www.gitpod.io/blog/">Blog</a>
-        </p>
-      </div>}
     </StartPage>;
   }
 }
 
-function getPendingChanges(workspaceInstance?: WorkspaceInstance) {
-  const pendingChanges: { message: string, items: string[] }[] = [];
-  const repo = workspaceInstance && workspaceInstance.status && workspaceInstance.status.repo;
+function PendingChangesDropdown(props: { workspaceInstance?: WorkspaceInstance }) {
+  const repo = props.workspaceInstance?.status?.repo;
+  const headingStyle = 'text-gray-500 text-left';
+  const itemStyle = 'text-gray-400 text-left -mt-5';
+  const menuEntries: ContextMenuEntry[] = [];
+  let totalChanges = 0;
   if (repo) {
-    if (repo.totalUncommitedFiles || 0 > 0) {
-      pendingChanges.push({
-        message: repo.totalUncommitedFiles === 1 ? 'an uncommited file' : `${repo.totalUncommitedFiles} uncommited files`,
-        items: repo.uncommitedFiles || []
-      });
+    if ((repo.totalUntrackedFiles || 0) > 0) {
+      totalChanges += repo.totalUntrackedFiles || 0;
+      menuEntries.push({ title: 'Untracked Files', customFontStyle: headingStyle });
+      (repo.untrackedFiles || []).forEach(item => menuEntries.push({ title: item, customFontStyle: itemStyle }));
     }
-    if (repo.totalUntrackedFiles || 0 > 0) {
-      pendingChanges.push({
-        message: repo.totalUntrackedFiles === 1 ? 'an untracked file' : `${repo.totalUntrackedFiles} untracked files`,
-        items: repo.untrackedFiles || []
-      });
+    if ((repo.totalUncommitedFiles || 0) > 0) {
+      totalChanges += repo.totalUncommitedFiles || 0;
+      menuEntries.push({ title: 'Uncommitted Files', customFontStyle: headingStyle });
+      (repo.uncommitedFiles || []).forEach(item => menuEntries.push({ title: item, customFontStyle: itemStyle }));
     }
-    if (repo.totalUnpushedCommits || 0 > 0) {
-      pendingChanges.push({
-        message: repo.totalUnpushedCommits === 1 ? 'an unpushed commit' : `${repo.totalUnpushedCommits} unpushed commits`,
-        items: repo.unpushedCommits || []
-      });
+    if ((repo.totalUnpushedCommits || 0) > 0) {
+      totalChanges += repo.totalUnpushedCommits || 0;
+      menuEntries.push({ title: 'Unpushed Commits', customFontStyle: headingStyle });
+      (repo.unpushedCommits || []).forEach(item => menuEntries.push({ title: item, customFontStyle: itemStyle }));
     }
   }
-  return pendingChanges;
+  if (totalChanges <= 0) {
+    return <p className="mt-2">No Changes</p>;
+  }
+  return <ContextMenu menuEntries={menuEntries} width="w-64 max-h-48 overflow-scroll mx-auto left-0 right-0">
+    <p className="mt-2 flex justify-center text-gitpod-red">
+      <span>{totalChanges} Change{totalChanges === 1 ? '' : 's'}</span>
+      <img className="m-2" src={CaretDown}/>
+    </p>
+  </ContextMenu>;
 }
 
-function ImageBuildView(props: { workspaceId: string }) {
+interface ImageBuildViewProps {
+  workspaceId: string;
+  onStartWithDefaultImage: () => void;
+  phase?: StartPhase;
+  error?: StartWorkspaceError;
+}
+
+function ImageBuildView(props: ImageBuildViewProps) {
   const logsEmitter = new EventEmitter();
 
   useEffect(() => {
@@ -337,10 +344,11 @@ function ImageBuildView(props: { workspaceId: string }) {
     };
   }, []);
 
-  return <StartPage title="Building Image">
+  return <StartPage title="Building Image" phase={props.phase}>
     <Suspense fallback={<div />}>
-      <WorkspaceLogs logsEmitter={logsEmitter}/>
+      <WorkspaceLogs logsEmitter={logsEmitter} errorMessage={props.error?.message} />
     </Suspense>
+    <button className="mt-6 secondary" onClick={props.onStartWithDefaultImage}>Continue with Default Image</button>
   </StartPage>;
 }
 

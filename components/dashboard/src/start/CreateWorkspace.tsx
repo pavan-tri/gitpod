@@ -5,12 +5,13 @@
  */
 
 import EventEmitter from "events";
-import React, { useEffect, Suspense } from "react";
+import React, { useEffect, Suspense, useContext } from "react";
 import { CreateWorkspaceMode, WorkspaceCreationResult, RunningWorkspacePrebuildStarting } from "@gitpod/gitpod-protocol";
 import { ErrorCodes } from "@gitpod/gitpod-protocol/lib/messaging/error";
 import Modal from "../components/Modal";
 import { getGitpodService, gitpodHostUrl } from "../service/service";
-import { StartPage, StartPhase } from "./StartPage";
+import { UserContext } from "../user-context";
+import { StartPage, StartPhase, StartWorkspaceError } from "./StartPage";
 import StartWorkspace from "./StartWorkspace";
 
 const WorkspaceLogs = React.lazy(() => import('./WorkspaceLogs'));
@@ -21,14 +22,8 @@ export interface CreateWorkspaceProps {
 
 export interface CreateWorkspaceState {
   result?: WorkspaceCreationResult;
-  error?: CreateWorkspaceError;
+  error?: StartWorkspaceError;
   stillParsing: boolean;
-}
-
-export interface CreateWorkspaceError {
-  message?: string;
-  code?: number;
-  data?: any;
 }
 
 export default class CreateWorkspace extends React.Component<CreateWorkspaceProps, CreateWorkspaceState> {
@@ -44,10 +39,7 @@ export default class CreateWorkspace extends React.Component<CreateWorkspaceProp
 
   async createWorkspace(mode = CreateWorkspaceMode.SelectIfRunning) {
     // Invalidate any previous result.
-    this.setState({
-      result: undefined,
-      stillParsing: true,
-    });
+    this.setState({ result: undefined, stillParsing: true });
 
     // We assume anything longer than 3 seconds is no longer just parsing the context URL (i.e. it's now creating a workspace).
     let timeout = setTimeout(() => this.setState({ stillParsing: false }), 3000);
@@ -62,17 +54,11 @@ export default class CreateWorkspace extends React.Component<CreateWorkspaceProp
         return;
       }
       clearTimeout(timeout);
-      this.setState({
-        result,
-        stillParsing: false,
-      });
+      this.setState({ result, stillParsing: false });
     } catch (error) {
       clearTimeout(timeout);
       console.error(error);
-      this.setState({
-        error,
-        stillParsing: false,
-      });
+      this.setState({ error, stillParsing: false });
     }
   }
 
@@ -81,22 +67,45 @@ export default class CreateWorkspace extends React.Component<CreateWorkspaceProp
     let phase = StartPhase.Checking;
     let statusMessage = <p className="text-base text-gray-400">{this.state.stillParsing ? 'Parsing context …' : 'Preparing workspace …'}</p>;
 
-    const error = this.state?.error;
+    let error = this.state?.error;
     if (error) {
       switch (error.code) {
         case ErrorCodes.CONTEXT_PARSE_ERROR:
           statusMessage = <div className="text-center">
-            <p className="text-base text-red-500">Unrecognized context: '{contextUrl}'</p>
             <p className="text-base mt-2">Learn more about <a className="text-blue" href="https://www.gitpod.io/docs/context-urls/">supported context URLs</a></p>
           </div>;
           break;
         case ErrorCodes.NOT_FOUND:
           statusMessage = <div className="text-center">
-            <p className="text-base text-red-500">Not found: {contextUrl}</p>
+            <p className="text-base text-gitpod-red">Not found: {contextUrl}</p>
           </div>;
           break;
+        case ErrorCodes.PLAN_DOES_NOT_ALLOW_PRIVATE_REPOS:
+          // HACK: Hide the error (behind the modal)
+          error = undefined;
+          phase = StartPhase.Stopped;
+          statusMessage = <LimitReachedModal>
+            <p className="mt-1 mb-2 text-base">Gitpod is free for public repositories. To work with private repositories, please upgrade to a compatible paid plan.</p>
+          </LimitReachedModal>;
+          break;
+        case ErrorCodes.TOO_MANY_RUNNING_WORKSPACES:
+          // HACK: Hide the error (behind the modal)
+          error = undefined;
+          phase = StartPhase.Stopped;
+          statusMessage = <LimitReachedModal>
+            <p className="mt-1 mb-2 text-base">You have reached the limit of parallel running workspaces for your account. Please, upgrade or stop one of the running workspaces.</p>
+          </LimitReachedModal>;
+          break;
+        case ErrorCodes.NOT_ENOUGH_CREDIT:
+          // HACK: Hide the error (behind the modal)
+          error = undefined;
+          phase = StartPhase.Stopped;
+          statusMessage = <LimitReachedModal>
+            <p className="mt-1 mb-2 text-base">You have reached the limit of monthly workspace hours for your account. Please upgrade to get more hours for your workspaces.</p>
+          </LimitReachedModal>;
+          break;
         default:
-          statusMessage = <p className="text-base text-red-500 w-96">Unknown Error: {JSON.stringify(this.state?.error, null, 2)}</p>;
+          statusMessage = <p className="text-base text-gitpod-red w-96">Unknown Error: {JSON.stringify(this.state?.error, null, 2)}</p>;
           break;
       }
     }
@@ -109,7 +118,7 @@ export default class CreateWorkspace extends React.Component<CreateWorkspaceProp
     else if (result?.existingWorkspaces) {
       statusMessage = <Modal visible={true} closeable={false} onClose={()=>{}}>
         <h3>Running Workspaces</h3>
-        <div className="border-t border-b border-gray-200 mt-2 -mx-6 px-6 py-2">
+        <div className="border-t border-b border-gray-200 mt-4 -mx-6 px-6 py-2">
           <p className="mt-1 mb-2 text-base">You already have running workspaces with the same context. You can open an existing one or open a new workspace.</p>
           <>
             {result?.existingWorkspaces?.map(w =>
@@ -136,10 +145,10 @@ export default class CreateWorkspace extends React.Component<CreateWorkspaceProp
       />;
     }
 
-    return <StartPage phase={phase} error={!!error}>
+    return <StartPage phase={phase} error={error}>
       {statusMessage}
       {error && <div>
-        <a href={gitpodHostUrl.asDashboard().toString()}><button className="mt-8 secondary">Go back to dashboard</button></a>
+        <a href={gitpodHostUrl.asDashboard().toString()}><button className="mt-8 secondary">Go to Dashboard</button></a>
         <p className="mt-14 text-base text-gray-400 flex space-x-2">
           <a href="https://www.gitpod.io/docs/">Docs</a>
           <span>—</span>
@@ -150,6 +159,23 @@ export default class CreateWorkspace extends React.Component<CreateWorkspaceProp
       </div>}
     </StartPage>;
   }
+}
+
+function LimitReachedModal(p: { children: React.ReactNode }) {
+  const { user } = useContext(UserContext);
+  return <Modal visible={true} closeable={false} onClose={()=>{}}>
+    <h3 className="flex">
+      <span className="flex-grow">Limit Reached</span>
+      <img className="rounded-full w-8 h-8" src={user?.avatarUrl || ''} alt={user?.name || 'Anonymous'} />
+    </h3>
+    <div className="border-t border-b border-gray-200 mt-4 -mx-6 px-6 py-2">
+      {p.children}
+    </div>
+    <div className="flex justify-end mt-6">
+      <a href={gitpodHostUrl.asDashboard().toString()}><button className="secondary">Go to Dashboard</button></a>
+      <a href={gitpodHostUrl.with({ pathname: 'plans' }).toString()} className="ml-2"><button>Upgrade</button></a>
+    </div>
+  </Modal>;
 }
 
 interface RunningPrebuildViewProps {

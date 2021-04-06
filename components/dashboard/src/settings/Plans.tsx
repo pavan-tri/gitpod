@@ -16,7 +16,8 @@ import info from '../images/info.svg';
 import exclamation from '../images/exclamation.svg';
 import { getGitpodService } from "../service/service";
 import { UserContext } from "../user-context";
-import { SettingsPage } from "./SettingsPage";
+import { PageWithSubMenu } from "../components/PageWithSubMenu";
+import settingsMenu from "./settings-menu";
 
 type PlanWithOriginalPrice = Plan & { originalPrice?: number };
 type PendingPlan = PlanWithOriginalPrice & { pendingSince: number };
@@ -25,10 +26,8 @@ export default function () {
     const { user } = useContext(UserContext);
     const { server } = getGitpodService();
     const [ accountStatement, setAccountStatement ] = useState<AccountStatement>();
-    const [ showPaymentUI, setShowPaymentUI ] = useState<boolean>();
     const [ isChargebeeCustomer, setIsChargebeeCustomer ] = useState<boolean>();
     const [ isStudent, setIsStudent ] = useState<boolean>();
-    const [ clientRegion, setClientRegion ] = useState<string>();
     const [ currency, setCurrency ] = useState<Currency>('USD');
     const [ availableCoupons, setAvailableCoupons ] = useState<PlanCoupon[]>();
     const [ appliedCoupons, setAppliedCoupons ] = useState<PlanCoupon[]>();
@@ -40,11 +39,9 @@ export default function () {
     useEffect(() => {
         Promise.all([
             server.getAccountStatement({}).then(v => () => setAccountStatement(v)),
-            server.getShowPaymentUI().then(v => () => setShowPaymentUI(v)),
             server.isChargebeeCustomer().then(v => () => setIsChargebeeCustomer(v)),
             server.isStudent().then(v => () => setIsStudent(v)),
             server.getClientRegion().then(v => () => {
-                setClientRegion(v);
                 // @ts-ignore
                 setCurrency(countries[v]?.currency === 'EUR' ? 'EUR' : 'USD');
             }),
@@ -58,14 +55,6 @@ export default function () {
         }
     }, []);
 
-    console.log('accountStatement', accountStatement);
-    console.log('showPaymentUI', showPaymentUI);
-    console.log('isChargebeeCustomer', isChargebeeCustomer);
-    console.log('isStudent', isStudent);
-    console.log('clientRegion', clientRegion);
-    console.log('availableCoupons', availableCoupons);
-    console.log('appliedCoupons', appliedCoupons);
-    console.log('gitHubUpgradeUrls', gitHubUpgradeUrls);
     console.log('privateRepoTrialEndDate', privateRepoTrialEndDate);
 
     const activeSubscriptions = (accountStatement?.subscriptions || []).filter(s => Subscription.isActive(s, new Date().toISOString()));
@@ -93,8 +82,8 @@ export default function () {
         if (paidPlan?.chargebeeId === pendingUpgradePlan.chargebeeId) {
             // The upgrade already worked
             removePendingUpgrade();
-        } else if ((pendingUpgradePlan.pendingSince + 1000 * 60 * 3) < Date.now()) {
-            // Pending upgrades expire after 3 minutes
+        } else if ((pendingUpgradePlan.pendingSince + 1000 * 60 * 5) < Date.now()) {
+            // Pending upgrades expire after 5 minutes
             removePendingUpgrade();
         } else if (!pollAccountStatementTimeout) {
             // Refresh account statement in 10 seconds in order to poll for upgrade confirmed
@@ -104,17 +93,14 @@ export default function () {
             }, 10000);
         }
     }
-    console.log('pendingUpgradePlan', pendingUpgradePlan);
 
     // Optimistically select a new paid plan even if the transaction is still in progress (i.e. waiting for Chargebee callback)
     const currentPlan = pendingUpgradePlan || paidPlan || freePlan;
-    console.log('currentPlan', currentPlan);
 
     // If the user has a paid plan with a different currency, force that currency.
     if (currency !== currentPlan.currency && !Plans.isFreePlan(currentPlan.chargebeeId)) {
         setCurrency(currentPlan.currency);
     }
-    console.log('currency', currency);
 
     const personalPlan = Plans.getPersonalPlan(currency);
     const professionalPlan = Plans.getNewProPlan(currency);
@@ -124,7 +110,6 @@ export default function () {
     const scheduledDowngradePlanId = !!(paidSubscription?.paymentData?.downgradeDate)
         ? paidSubscription.paymentData.newPlan || personalPlan.chargebeeId
         : undefined;
-    console.log('scheduledDowngradePlanId', scheduledDowngradePlanId);
 
     const [ pendingDowngradePlan, setPendingDowngradePlan ] = useState<PendingPlan | undefined>(getLocalStorageObject('pendingDowngradePlan'));
     const setPendingDowngrade = (to: PendingPlan) => {
@@ -144,8 +129,8 @@ export default function () {
         } else if (scheduledDowngradePlanId === pendingDowngradePlan.chargebeeId) {
             // The Downgrade is already scheduled
             removePendingDowngrade();
-        } else if ((pendingDowngradePlan.pendingSince + 1000 * 60 * 3) < Date.now()) {
-            // Pending downgrades expire after 3 minutes
+        } else if ((pendingDowngradePlan.pendingSince + 1000 * 60 * 5) < Date.now()) {
+            // Pending downgrades expire after 5 minutes
             removePendingDowngrade();
         } else if (!pollAccountStatementTimeout) {
             // Refresh account statement in 10 seconds in orer to poll for downgrade confirmed/scheduled
@@ -155,7 +140,6 @@ export default function () {
             }, 10000);
         }
     }
-    console.log('pendingDowngradePlan', pendingDowngradePlan);
 
     const [ confirmUpgradeToPlan, setConfirmUpgradeToPlan ] = useState<Plan>();
     const [ confirmDowngradeToPlan, setConfirmDowngradeToPlan ] = useState<Plan>();
@@ -330,7 +314,7 @@ export default function () {
         const bottomLabel = ('pendingSince' in currentPlan) ? <p className="text-green-600 animate-pulse">Upgrade in progress</p> : undefined;
         planCards.push(<PlanCard plan={applyCoupons(unleashedPlan, appliedCoupons)} isCurrent={true} bottomLabel={bottomLabel}>{unleashedFeatures}</PlanCard>);
     } else {
-        const targetPlan = applyCoupons(unleashedPlan, availableCoupons);
+        const targetPlan = applyCoupons(isStudent ? studentUnleashedPlan : unleashedPlan, availableCoupons);
         let onUpgrade;
         switch (Plans.subscriptionChange(currentPlan.type, targetPlan.type)) {
             case 'upgrade': onUpgrade = () => confirmUpgrade(targetPlan); break;
@@ -339,7 +323,7 @@ export default function () {
     }
 
     return <div>
-        <SettingsPage title='Plans' subtitle='Manage account usage and billing.'>
+        <PageWithSubMenu subMenu={settingsMenu}  title='Plans' subtitle='Manage account usage and billing.'>
             <div className="w-full text-center">
                 <p className="text-xl text-gray-500">You are currently using the <span className="font-bold">{currentPlan.name}</span> plan.</p>
                 <p className="text-base w-96 m-auto">Upgrade your plan to get access to private repositories or more parallel workspaces.</p>
@@ -364,7 +348,7 @@ export default function () {
             </div>
             {!!confirmUpgradeToPlan && <Modal visible={true} onClose={() => setConfirmUpgradeToPlan(undefined)}>
                 <h3>Upgrade to {confirmUpgradeToPlan.name}</h3>
-                <div className="border-t border-b border-gray-200 mt-2 -mx-6 px-6 py-2">
+                <div className="border-t border-b border-gray-200 mt-4 -mx-6 px-6 py-2">
                     <p className="mt-1 mb-4 text-base">You are about to upgrade to {confirmUpgradeToPlan.name}.</p>
                     {!Plans.isFreePlan(currentPlan.chargebeeId) && <div className="flex rounded-md bg-gray-200 p-4 mb-4">
                         <img className="w-4 h-4 m-1 ml-2 mr-4" src={info} />
@@ -381,7 +365,7 @@ export default function () {
             </Modal>}
             {!!confirmDowngradeToPlan && <Modal visible={true} onClose={() => setConfirmDowngradeToPlan(undefined)}>
                 <h3>Downgrade to {confirmDowngradeToPlan.name}</h3>
-                <div className="border-t border-b border-gray-200 mt-2 -mx-6 px-6 py-2">
+                <div className="border-t border-b border-gray-200 mt-4 -mx-6 px-6 py-2">
                     <p className="mt-1 mb-4 text-base">You are about to downgrade to {confirmDowngradeToPlan.name}.</p>
                     <div className="flex rounded-md bg-gray-200 p-4 mb-4">
                         <img className="w-4 h-4 m-1 ml-2 mr-4" src={info} />
@@ -394,7 +378,7 @@ export default function () {
                     <button className="bg-red-600 border-red-800" onClick={doDowngrade}>Downgrade Plan</button>
                 </div>
             </Modal>}
-        </SettingsPage>
+        </PageWithSubMenu>
     </div>;
 }
 
