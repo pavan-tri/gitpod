@@ -1,7 +1,13 @@
 # Insert Additional Values Here
 version: main.659
 imagePrefix: eu.gcr.io/gitpod-core-dev/build/
+installation:
+  region: ap-southeast-1
 components:
+  contentService:
+    remoteStorage:
+      minio:
+        region: ap-southeast-1
   wsDaemon:
     containerRuntime:
       nodeRoots:
