@@ -129,7 +129,7 @@ resource "kubernetes_job" "mysql_initializer" {
     }
     backoff_limit = 4
   }
-
+  wait_for_completion = false
   depends_on = [
     aws_security_group_rule.gitpod_database
   ]
