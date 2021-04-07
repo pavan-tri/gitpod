@@ -36,12 +36,13 @@ variable "aws" {
 
 variable "kubernetes" {
   type = object({
-    cluster_name  = string
-    home_dir      = string
-    version       = string
-    instance_type = string
+    cluster_name   = string
+    home_dir       = string
+    version        = string
+    instance_type  = string
     min_node_count = number
     max_node_count = number
+    sysmasters     = list(string)
     workspace_worker_group = object({
       min_node_count = number
       max_node_count = number
@@ -50,12 +51,13 @@ variable "kubernetes" {
   
   })
   default = {
-    cluster_name  = "gitpod-cluster"
-    version       = "1.16"
+    cluster_name   = "gitpod-cluster"
+    version        = "1.16"
     min_node_count = 1
     max_node_count = 1
     instance_type = "m4.large"
     home_dir      = "/home/gitpod"
+    sysmasters    = []
     workspace_worker_group = {
       min_node_count = 1
       max_node_count = 1

@@ -35,7 +35,11 @@ module "vpc" {
 module "kubernetes" {
   source  = "terraform-aws-modules/eks/aws"
   version = "13.2.1"
-  map_users  = [{ "groups": [ "system:masters" ], "userarn": "arn:aws:iam::060260394319:user/bilal.shahzad", "username": "bilal.shahzad" }]
+  #make this into a for-loop with values from auto.tfvars
+  map_users  = [
+    { "groups": [ "system:masters" ], "userarn": "arn:aws:iam::060260394319:user/dmitry.moskalets", "username": "dmitry.moskalets" },
+    { "groups": [ "system:masters" ], "userarn": "arn:aws:iam::060260394319:user/pavan.v", "username": "pavan.v" },
+  ]
   cluster_name       = var.kubernetes.cluster_name
   cluster_version    = var.kubernetes.version
   subnets            = module.vpc.public_subnets
