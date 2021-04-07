@@ -22,11 +22,12 @@ import {
     UpdateRequest,
     UpdateResponse
 } from '@gitpod/ws-manager-bridge-api/lib';
+import { GetWorkspacesRequest } from '@gitpod/ws-manager/lib';
 import { WorkspaceManagerClientProvider } from '@gitpod/ws-manager/lib/client-provider';
 import * as grpc from "grpc";
 import { inject, injectable } from 'inversify';
-import { BridgeController } from '../bridge-controller';
-import { Configuration } from '../config';
+import { BridgeController } from './bridge-controller';
+import { Configuration } from './config';
 
 export interface ClusterServiceServerOptions {
     port: number;
@@ -59,13 +60,13 @@ export class ClusterService implements IClusterServiceServer {
                     async () => {
                         const oldCluster = await this.db.findByName(req.name);
                         if (!oldCluster) {
-                            throw new GRPCError(grpc.status.ALREADY_EXISTS, `a WorkspaceCluster with name ${req.name} already exists in the DB!`);
+                            throw new GRPCError(grpc.status.ALREADY_EXISTS, `a WorkspaceCluster with name ${req.name} already exists in the DB`);
                         }
                     },
                     async () => {
                         const oldCluster = await this.db.findFiltered({ url: req.url });
                         if (!oldCluster) {
-                            throw new GRPCError(grpc.status.ALREADY_EXISTS, `a WorkspaceCluster with url ${req.url} already exists in the DB!`);
+                            throw new GRPCError(grpc.status.ALREADY_EXISTS, `a WorkspaceCluster with url ${req.url} already exists in the DB`);
                         }
                     }
                 ]);
@@ -82,8 +83,8 @@ export class ClusterService implements IClusterServiceServer {
                     state = mapCordoned(req.hints.cordoned);
                 }
                 let score = mapPreferabilityToScore(perfereability);
-                if (!score) {
-                    throw new GRPCError(grpc.status.INVALID_ARGUMENT, `unknown Preferability ${perfereability}!`);
+                if (score === undefined) {
+                    throw new GRPCError(grpc.status.INVALID_ARGUMENT, `unknown preferability ${perfereability}`);
                 }
 
                 if (!req.tls) {
@@ -107,7 +108,16 @@ export class ClusterService implements IClusterServiceServer {
                 };
 
                 // try to connect to validate the config. Throws an exception if it fails.
-                await this.clientProvider.tryConnectTo(newCluster);
+                await new Promise<void>((resolve, reject) => {
+                    const c = this.clientProvider.createClient(newCluster);
+                    c.getWorkspaces(new GetWorkspacesRequest(), (err, resp) => {
+                        if (err) {
+                            reject(new GRPCError(grpc.status.FAILED_PRECONDITION, `cannot reach ${req.url}: ${err.message}`));
+                        } else {
+                            resolve();
+                        }
+                    });
+                })
 
                 await this.db.save(newCluster);
 
@@ -177,7 +187,7 @@ export class ClusterService implements IClusterServiceServer {
                     clusterStatus.setState(mapClusterState(cluster.state));
                     clusterStatus.setScore(cluster.score);
                     clusterStatus.setMaxScore(cluster.maxScore);
-                    clusterStatus.setGoverned(true);
+                    clusterStatus.setGoverned(cluster.govern);
                     response.addStatus(clusterStatus);
                 }
 
@@ -197,11 +207,12 @@ export class ClusterService implements IClusterServiceServer {
 }
 
 function mapPreferabilityToScore(p: Preferability): number | undefined {
-    const mapping = new Map<number, number>();
-    mapping.set(Preferability.NONE, 50);
-    mapping.set(Preferability.PREFER, 100);
-    mapping.set(Preferability.DONTSCHEDULE, 0);
-    return mapping.get(p);
+    switch (p) {
+        case Preferability.PREFER:       return 100;
+        case Preferability.NONE:         return 50;
+        case Preferability.DONTSCHEDULE: return 0;
+        default:                         return undefined;
+    }
 }
 
 function mapCordoned(cordoned: boolean): WorkspaceClusterState {
