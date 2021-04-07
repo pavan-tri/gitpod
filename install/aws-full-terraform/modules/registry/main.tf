@@ -15,7 +15,7 @@ resource "aws_ecr_repository" "gitpod_registry" {
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
-    scan_on_push = true
+    scan_on_push = false
   }
   tags = {
     project = var.project.name
@@ -27,7 +27,7 @@ resource "aws_ecr_repository" "gitpod_registry_base" {
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
-    scan_on_push = true
+    scan_on_push = false
   }
   tags = {
     project = var.project.name

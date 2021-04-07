@@ -39,15 +39,28 @@ variable "kubernetes" {
     cluster_name  = string
     home_dir      = string
     version       = string
-    node_count    = number
     instance_type = string
+    min_node_count = number
+    max_node_count = number
+    workspace_worker_group = object({
+      min_node_count = number
+      max_node_count = number
+      instance_type  = string
+    })
+  
   })
   default = {
     cluster_name  = "gitpod-cluster"
     version       = "1.16"
-    node_count    = 6
+    min_node_count = 1
+    max_node_count = 1
     instance_type = "m4.large"
     home_dir      = "/home/gitpod"
+    workspace_worker_group = {
+      min_node_count = 1
+      max_node_count = 1
+      instance_type  = "m4.large"
+    }
   }
 }
 
