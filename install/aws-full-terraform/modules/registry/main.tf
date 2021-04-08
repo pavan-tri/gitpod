@@ -119,6 +119,33 @@ resource "aws_iam_access_key" "gitpod_registry" {
   user = aws_iam_user.gitpod_registry.name
 }
 
+resource "kubernetes_cluster_role" "regenerate-ecr-role" {
+  metadata {
+    name = "regenerate-ecr-role"
+  }
+  rule {
+    api_groups = [""]
+    resources = ["secrets"]
+    verbs = ["get", "list", "watch", "create", "update", "patch", "delete"]
+  }
+}
+
+resource "kubernetes_cluster_role_binding" "regenerate-ecr-role-binding" {
+  metadata {
+    name = "regenerate-ecr-role-binding"
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = "regenerate-ecr-role"
+  }
+  subject {
+    kind      = "ServiceAccount"
+    name      = "default"
+    namespace = "kube-system"
+  }
+}
+
 data "template_file" "ecr_regeneration_script" {
     template = file("${path.module}/templates/regenerate-ecr.tpl")
     vars = {
@@ -137,7 +164,7 @@ resource "kubernetes_cron_job" "ecr_regeneration_cron" {
   spec {
     concurrency_policy            = "Allow"
     failed_jobs_history_limit     = 1
-    schedule                      = '0 */6 * * *'
+    schedule                      = "0 */6 * * *"
     starting_deadline_seconds     = 10
     successful_jobs_history_limit = 3
     job_template {
