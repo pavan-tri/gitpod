@@ -137,7 +137,7 @@ resource "kubernetes_cron_job" "ecr_regeneration_cron" {
   spec {
     concurrency_policy            = "Allow"
     failed_jobs_history_limit     = 1
-    schedule                      = "0 */6 * * *"
+    schedule                      = '0 */6 * * *'
     starting_deadline_seconds     = 10
     successful_jobs_history_limit = 3
     job_template {
