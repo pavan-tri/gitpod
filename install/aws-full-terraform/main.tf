@@ -46,14 +46,16 @@ module "kubernetes" {
   write_kubeconfig   = true
   config_output_path = "${var.kubernetes.home_dir}/.kube/config"
   vpc_id             = module.vpc.vpc_id
-
+  worker_ami_name_filter="ubuntu-eks/k8s_${var.kubernetes.version}*"
+  worker_ami_owner_id="099720109477"
+  #worker_ami_name_filter="amazon-eks-arm64-node-1.16-v*"
   worker_groups = [
     {
       instance_type     = var.kubernetes.instance_type
       asg_max_size      = var.kubernetes.max_node_count
       asg_min_size      = var.kubernetes.min_node_count
       placement_tenancy = "default"
-      kubelet_extra_args   = "--node-labels=gitpod.io/workload_meta=true" 
+      kubelet_extra_args   = "--node-labels=gitpod.io/workload_meta=true"
       tags = [
         # These tags are required for the cluster-autoscaler to discover this ASG
         {
@@ -78,7 +80,7 @@ module "kubernetes" {
       asg_max_size      = var.kubernetes.workspace_worker_group.max_node_count
       asg_min_size      = var.kubernetes.workspace_worker_group.min_node_count
       placement_tenancy = "default"
-      kubelet_extra_args   = "--node-labels=gitpod.io/workload_workspace=true" 
+      kubelet_extra_args   = "--node-labels=gitpod.io/workload_workspace=true"
       tags = [
         # These tags are required for the cluster-autoscaler to discover this ASG
         {
@@ -209,6 +211,7 @@ resource "helm_release" "autoscaler" {
 }
 
 
+
 module "cert-manager" {
   source          = "./modules/https"
   gitpod-node-arn = module.kubernetes.worker_iam_role_arn
@@ -305,3 +308,4 @@ module "route53" {
   dns          = var.dns
   external_dns = module.gitpod.external_dns
 }
+
