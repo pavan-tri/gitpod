@@ -3,7 +3,26 @@ version: main.691
 imagePrefix: eu.gcr.io/gitpod-core-dev/build/
 installation:
   region: ap-southeast-1
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: gitpod.io/workload_meta
+          operator: In
+          values:
+          - "true"
 components:
+  wsScheduler:
+    scaler:
+      enabled: true
+      controller:
+        kind: "constant"
+        constant:
+          setpoint: 1
+  workspace:
+    affinity:
+      default: "gitpod.io/workload_workspace"
   contentService:
     remoteStorage:
       minio:
@@ -13,9 +32,9 @@ components:
       nodeRoots:
         - /var/lib
         - /run/containerd/io.containerd.runtime.v1.linux/moby
-      userNamespaces:
-        shiftfsModuleLoader:
-          enabled: true
+    userNamespaces:
+      shiftfsModuleLoader:
+        enabled: true
 rabbitmq:
   # ensure shovels are configured on boot
   shovels:
