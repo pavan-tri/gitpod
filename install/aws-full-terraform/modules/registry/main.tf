@@ -142,7 +142,7 @@ resource "kubernetes_cluster_role_binding" "regenerate-ecr-role-binding" {
   subject {
     kind      = "ServiceAccount"
     name      = "default"
-    namespace = "kube-system"
+    namespace = "default"
   }
 }
 
