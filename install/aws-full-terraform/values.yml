@@ -3,6 +3,7 @@ version: main.691
 imagePrefix: eu.gcr.io/gitpod-core-dev/build/
 installation:
   region: ap-southeast-1
+imagePullPolicy: Always
 affinity:
   nodeAffinity:
     requiredDuringSchedulingIgnoredDuringExecution:
@@ -15,7 +16,7 @@ affinity:
 components:
   wsScheduler:
     scaler:
-      enabled: true
+      enabled: false
       controller:
         kind: "constant"
         constant:
@@ -25,9 +26,11 @@ components:
       default: "gitpod.io/workload_workspace"
   contentService:
     remoteStorage:
+      blobQuota: 6073741824 # 6 GiB
       minio:
         region: ap-southeast-1
   wsDaemon:
+    workspaceSizeLimit: "5g"
     containerRuntime:
       nodeRoots:
         - /var/lib
