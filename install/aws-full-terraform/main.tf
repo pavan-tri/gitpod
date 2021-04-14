@@ -48,7 +48,6 @@ module "kubernetes" {
   vpc_id             = module.vpc.vpc_id
   worker_ami_name_filter="ubuntu-eks/k8s_${var.kubernetes.version}*"
   worker_ami_owner_id="099720109477"
-  #worker_ami_name_filter="amazon-eks-arm64-node-1.16-v*"
   worker_groups = [
     {
       instance_type     = var.kubernetes.instance_type
@@ -201,7 +200,7 @@ resource "helm_release" "autoscaler" {
 
       image:
         repository: eu.gcr.io/k8s-artifacts-prod/autoscaling/cluster-autoscaler
-        tag: v1.16.5
+        tag: v${var.kubernetes.autoscaler}
     EOT
   ]
 

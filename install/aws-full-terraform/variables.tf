@@ -39,6 +39,7 @@ variable "kubernetes" {
     cluster_name   = string
     home_dir       = string
     version        = string
+    autoscaler     = string
     instance_type  = string
     min_node_count = number
     max_node_count = number
@@ -53,6 +54,7 @@ variable "kubernetes" {
   default = {
     cluster_name   = "gitpod-cluster"
     version        = "1.16"
+    autoscaler     = "1.16.5"
     min_node_count = 1
     max_node_count = 1
     instance_type = "m4.large"
