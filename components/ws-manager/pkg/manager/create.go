@@ -305,7 +305,7 @@ func (m *Manager) createDefiniteWorkspacePod(startContext *startWorkspaceContext
 	//   - the TAP driver documentation says so (see https://www.kernel.org/doc/Documentation/networking/tuntap.txt)
 	//   - systemd's nspawn does the same thing (if it's good enough for them, it's good enough for us)
 	var (
-		devType          = corev1.HostPathFile
+		devType          = corev1.HostPathCharDev
 		hostPathOrCreate = corev1.HostPathDirectoryOrCreate
 		daemonVolumeName = "daemon-mount"
 	)
