@@ -27,4 +27,4 @@ COPY --from=builder /app /app/
 USER unode
 WORKDIR /app/node_modules/@gitpod/server
 # Don't use start-ee-inspect as long as we use native modules (casues segfault)
-CMD exec yarn start-ee
+CMD exec yarn start
