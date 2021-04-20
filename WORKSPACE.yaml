@@ -2,13 +2,13 @@
 defaultTarget: components:all
 defaultArgs:
   coreYarnLockBase: ../..
-  publishToNPM: true
+  publishToNPM: false
 
 defaultVariant:
   config:
     go:
       lintCommand: ["golangci-lint", "run", "--disable", "govet,typecheck"]
-      buildCommand: ["go", "build", "-trimpath", "-ldflags='-buildid= -w -s'"]
+      #buildCommand: ["go", "build", "-trimpath", "-ldflags='-buildid= -w -s'"]
 
 variants:
 - name: oss
