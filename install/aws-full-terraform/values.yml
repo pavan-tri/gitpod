@@ -26,11 +26,22 @@ components:
       default: "gitpod.io/workload_workspace"
   contentService:
     remoteStorage:
-      blobQuota: 6073741824 # 6 GiB
+      #blobQuota: 6073741824 # 6 GiB
       minio:
         region: ap-southeast-1
+  server:
+    imagePrefix: "pavantri/"
+    version: "dev"
+  wsManagerBridge:
+    imagePrefix: "pavantri/"
+    version: "dev"
+  wsManager:
+    imagePrefix: "pavantri/"
+    version: "dev"
   wsDaemon:
-    workspaceSizeLimit: "5g"
+    imagePrefix: "pavantri/"
+    version: "dev"
+    #workspaceSizeLimit: "5g"
     containerRuntime:
       nodeRoots:
         - /var/lib
