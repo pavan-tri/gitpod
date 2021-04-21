@@ -23,5 +23,7 @@ kubectl create secret generic ${secret_name} \
 
 # Update the default service account
 kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"'${secret_name}'"}]}'
-
 echo "Token regeneration complete"
+kubectl delete pod -l component=image-builder
+kubectl delete pod -l component=registry-facade
+echo "Restarted Pods"
