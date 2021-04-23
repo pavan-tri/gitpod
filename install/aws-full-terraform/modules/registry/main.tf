@@ -156,7 +156,7 @@ resource "kubernetes_cluster_role" "regenerate-ecr-role" {
   }
   rule {
     api_groups = [""]
-    resources = ["secrets", "serviceaccounts"]
+    resources = ["pods", "secrets", "serviceaccounts"]
     verbs = ["get", "list", "watch", "create", "update", "patch", "delete"]
   }
 }
